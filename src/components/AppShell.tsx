@@ -1,9 +1,9 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import ProcessingQueue from './ProcessingQueue'
+import SpacesPanel from './SpacesPanel'
 
 type NavKey = 'home' | 'graph' | 'files' | 'publish'
 
@@ -16,18 +16,24 @@ interface AppShellProps {
 export default function AppShell({ children, filesPanel, headerActions }: AppShellProps) {
   const [filesPanelOpen, setFilesPanelOpen] = useState(true)
   const [activeNav, setActiveNav] = useState<NavKey>('home')
-  const router = useRouter()
+  const [showSpaces, setShowSpaces] = useState(false)
 
   function handleNav(key: NavKey) {
     if (key === 'files') {
       setFilesPanelOpen(!filesPanelOpen)
+      setShowSpaces(false)
       setActiveNav('files')
       return
     }
+    if (key === 'publish') {
+      setShowSpaces(!showSpaces)
+      setFilesPanelOpen(false)
+      setActiveNav('publish')
+      return
+    }
+    setShowSpaces(false)
     setActiveNav(key)
-    if (key === 'graph') router.push('/graph')
-    if (key === 'publish') router.push('/publish')
-    if (key === 'home') { /* already here */ }
+    if (key === 'home') { setFilesPanelOpen(true) }
   }
 
   return (
@@ -113,6 +119,13 @@ export default function AppShell({ children, filesPanel, headerActions }: AppShe
           <div className="w-56 shrink-0 border-r border-white/[0.04] bg-[#080808] overflow-y-auto">
             <ProcessingQueue />
             {filesPanel}
+          </div>
+        )}
+
+        {/* Spaces panel */}
+        {showSpaces && (
+          <div className="w-72 shrink-0 border-r border-white/[0.04] bg-[#080808] overflow-y-auto">
+            <SpacesPanel />
           </div>
         )}
 
