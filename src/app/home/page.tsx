@@ -13,7 +13,7 @@ export default async function HomePage() {
 
   if (!user) redirect('/login')
 
-  const [{ data: nodes }, { data: folders }, { data: inputs }, { data: edges }] = await Promise.all([
+  const [{ data: nodes }, { data: folders }, { data: inputs }, { data: edges }, { data: folderNodesData }] = await Promise.all([
     supabase
       .from('nodes')
       .select('*')
@@ -33,6 +33,10 @@ export default async function HomePage() {
       .from('edges')
       .select('from_node_id, to_node_id, relationship, strength')
       .limit(200),
+    supabase
+      .from('folder_nodes')
+      .select('folder_id, node_id')
+      .limit(500),
   ])
 
   return (
@@ -67,6 +71,7 @@ export default async function HomePage() {
             nodes={nodes ?? []}
             edges={edges ?? []}
             folders={folders ?? []}
+            folderNodes={folderNodesData ?? []}
           />
         </main>
       </div>

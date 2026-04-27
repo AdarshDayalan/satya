@@ -114,7 +114,7 @@ export default function PublicProfile({
         {/* Graph tab */}
         {tab === 'graph' && (
           <div className="space-y-4">
-            <KnowledgeGraph nodes={nodes} edges={edges} />
+            <KnowledgeGraph nodes={nodes} edges={edges} folders={[]} folderNodes={[]} />
             <p className="text-[11px] text-neutral-700 text-center">
               click a node in the browse tab to explore
             </p>

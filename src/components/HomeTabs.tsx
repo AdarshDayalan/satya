@@ -27,9 +27,14 @@ interface Folder {
   created_at: string
 }
 
+interface FolderNode {
+  folder_id: string
+  node_id: string
+}
+
 const TABS = [
+  { key: 'graph', label: 'field' },
   { key: 'fragments', label: 'fragments' },
-  { key: 'graph', label: 'graph' },
 ] as const
 
 type TabKey = (typeof TABS)[number]['key']
@@ -38,12 +43,14 @@ export default function HomeTabs({
   nodes,
   edges,
   folders,
+  folderNodes,
 }: {
   nodes: Node[]
   edges: Edge[]
   folders: Folder[]
+  folderNodes: FolderNode[]
 }) {
-  const [tab, setTab] = useState<TabKey>('fragments')
+  const [tab, setTab] = useState<TabKey>('graph')
 
   return (
     <div className="space-y-6">
@@ -63,14 +70,16 @@ export default function HomeTabs({
         ))}
       </div>
 
+      {tab === 'graph' && (
+        <KnowledgeGraph nodes={nodes} edges={edges} folders={folders} folderNodes={folderNodes} />
+      )}
+
       {tab === 'fragments' && (
         <div className="space-y-10">
           <FolderList folders={folders} />
           <NodeList nodes={nodes} />
         </div>
       )}
-
-      {tab === 'graph' && <KnowledgeGraph nodes={nodes} edges={edges} />}
     </div>
   )
 }
