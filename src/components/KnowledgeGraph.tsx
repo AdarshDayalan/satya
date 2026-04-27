@@ -119,9 +119,9 @@ export default function KnowledgeGraph({
     folderMap.current = fm
   }, [folderNodes])
 
-  // Compute EvidenceRank — recursive importance based on evidence flow
+  // Compute EvidenceRank — recursive importance based on evidence flow + source credibility
   const nodeRadii = useMemo(() => {
-    const ranks = computeEvidenceRank(nodes, edges, 4, 0.15)
+    const ranks = computeEvidenceRank(nodes, edges, undefined, 4, 0.15)
     return weightToRadius(ranks, 3, 22)
   }, [nodes, edges])
 

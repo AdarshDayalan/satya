@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useSelection } from './SelectionContext'
+import { getCredibility } from '@/lib/evidence-rank'
 import MarkdownContent from './MarkdownContent'
 import EditModal from './EditModal'
 import ConfirmDialog from './ConfirmDialog'
@@ -139,7 +140,7 @@ export default function SidePanel({ type, id, onClose, onNavigate, allNodes, ful
       {type === 'node' && nodeData ? (
         <div className="p-4 space-y-5 flex-1 overflow-y-auto">
           <div className="space-y-2">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <span className={`text-[10px] uppercase tracking-widest ${typeColors[nodeData.type] || 'text-neutral-600'}`}>
                 {nodeData.type}
               </span>
@@ -147,6 +148,27 @@ export default function SidePanel({ type, id, onClose, onNavigate, allNodes, ful
               <span className="text-[10px] text-neutral-700">
                 {new Date(nodeData.created_at).toLocaleDateString()}
               </span>
+              {(() => {
+                const input = nodeData.input_id ? store.inputs.get(nodeData.input_id) : null
+                if (!input) return null
+                const cred = getCredibility(input.source_type)
+                const tierColors: Record<string, string> = {
+                  'peer-reviewed': 'text-green-400/70 bg-green-400/10 border-green-400/20',
+                  'editorial': 'text-blue-400/60 bg-blue-400/10 border-blue-400/15',
+                  'personal': 'text-white/40 bg-white/[0.04] border-white/[0.06]',
+                  'media': 'text-amber-400/60 bg-amber-400/10 border-amber-400/15',
+                  'community': 'text-orange-400/60 bg-orange-400/10 border-orange-400/15',
+                  'social': 'text-pink-400/60 bg-pink-400/10 border-pink-400/15',
+                }
+                return (
+                  <>
+                    <span className="text-neutral-800">·</span>
+                    <span className={`text-[9px] px-1.5 py-0.5 rounded-full border ${tierColors[cred.tier] || tierColors.personal}`}>
+                      {cred.tier}
+                    </span>
+                  </>
+                )
+              })()}
             </div>
             <MarkdownContent content={nodeData.content} />
           </div>

@@ -4,10 +4,14 @@
  * Computes node importance by propagating weight through the edge graph.
  * Evidence and supporting nodes flow their weight upward toward the claims they support.
  * Big ideas emerge naturally from having lots of evidence flowing into them.
+ *
+ * Source credibility factors into base weight — a node from a peer-reviewed study
+ * starts with more weight than one from a blog, so its evidence propagates stronger.
  */
 
 interface Node {
   id: string
+  input_id?: string | null
 }
 
 interface Edge {
@@ -17,44 +21,91 @@ interface Edge {
   strength: number
 }
 
-// How much weight flows through each relationship type, and in which direction
-// Positive = from → to. Negative = to → from (reverse flow).
-const FLOW: Record<string, { weight: number; reverse: boolean }> = {
-  evidence_for: { weight: 1.0, reverse: false },   // evidence → claim: claim gets bigger
-  supports:     { weight: 0.9, reverse: false },   // support → supported: supported gets bigger
-  mechanism_of: { weight: 0.85, reverse: false },  // mechanism → outcome: outcome gets bigger
-  causes:       { weight: 0.8, reverse: false },   // cause → effect: effect gets bigger
-  caused_by:    { weight: 0.8, reverse: true },    // effect → cause: cause gets bigger
-  example_of:   { weight: 0.7, reverse: false },   // example → general: general gets bigger
-  refines:      { weight: 0.5, reverse: false },   // refinement → original: both grow slightly
-  similar:      { weight: 0.3, reverse: false },   // mutual weak flow
-  contradicts:  { weight: -0.3, reverse: false },  // contradiction reduces target weight slightly
+interface Input {
+  id: string
+  source_type: string
 }
 
+/**
+ * Source credibility tiers.
+ * Determines base weight of nodes from each source type.
+ * Higher = more trustworthy = more weight in the graph.
+ */
+export const SOURCE_CREDIBILITY: Record<string, { score: number; tier: string; label: string }> = {
+  pubmed:         { score: 1.5,  tier: 'peer-reviewed', label: 'Peer-reviewed research' },
+  research_paper: { score: 1.4,  tier: 'peer-reviewed', label: 'Research paper' },
+  article:        { score: 0.8,  tier: 'editorial',     label: 'Article / editorial' },
+  reddit:         { score: 0.5,  tier: 'community',     label: 'Community discussion' },
+  youtube:        { score: 0.6,  tier: 'media',         label: 'Video content' },
+  instagram:      { score: 0.4,  tier: 'social',        label: 'Social media' },
+  journal:        { score: 1.0,  tier: 'personal',      label: 'Your own thinking' },
+}
+
+// How much weight flows through each relationship type, and in which direction
+const FLOW: Record<string, { weight: number; reverse: boolean }> = {
+  evidence_for: { weight: 1.0, reverse: false },
+  supports:     { weight: 0.9, reverse: false },
+  mechanism_of: { weight: 0.85, reverse: false },
+  causes:       { weight: 0.8, reverse: false },
+  caused_by:    { weight: 0.8, reverse: true },
+  example_of:   { weight: 0.7, reverse: false },
+  refines:      { weight: 0.5, reverse: false },
+  similar:      { weight: 0.3, reverse: false },
+  contradicts:  { weight: -0.3, reverse: false },
+}
+
+/**
+ * Compute EvidenceRank for all nodes.
+ * @param nodes - All nodes in the graph
+ * @param edges - All edges
+ * @param inputs - All inputs (for credibility lookup)
+ * @param iterations - Number of propagation iterations
+ * @param damping - Damping factor (like PageRank)
+ */
 export function computeEvidenceRank(
   nodes: Node[],
   edges: Edge[],
+  inputs?: Input[],
   iterations: number = 4,
   damping: number = 0.15
 ): Map<string, number> {
   const weights = new Map<string, number>()
 
-  // Initialize all nodes at 1.0
+  // Build input lookup for credibility
+  const inputMap = new Map<string, Input>()
+  if (inputs) {
+    for (const inp of inputs) inputMap.set(inp.id, inp)
+  }
+
+  // Initialize nodes with credibility-weighted base
   for (const node of nodes) {
-    weights.set(node.id, 1.0)
+    let baseWeight = 1.0
+    if (node.input_id) {
+      const input = inputMap.get(node.input_id)
+      if (input) {
+        baseWeight = SOURCE_CREDIBILITY[input.source_type]?.score ?? 1.0
+      }
+    }
+    weights.set(node.id, baseWeight)
   }
 
   // Iterate to propagate weights
   for (let iter = 0; iter < iterations; iter++) {
     const newWeights = new Map<string, number>()
+
+    // Reset to base weights each iteration
     for (const node of nodes) {
-      newWeights.set(node.id, 1.0) // base weight each iteration
+      let baseWeight = 1.0
+      if (node.input_id) {
+        const input = inputMap.get(node.input_id)
+        if (input) baseWeight = SOURCE_CREDIBILITY[input.source_type]?.score ?? 1.0
+      }
+      newWeights.set(node.id, baseWeight)
     }
 
     for (const edge of edges) {
       const flow = FLOW[edge.relationship] || { weight: 0.3, reverse: false }
 
-      // Determine source → target of the flow
       const sourceId = flow.reverse ? edge.to_node_id : edge.from_node_id
       const targetId = flow.reverse ? edge.from_node_id : edge.to_node_id
 
@@ -62,22 +113,18 @@ export function computeEvidenceRank(
       const contribution = sourceWeight * Math.abs(flow.weight) * edge.strength * (1 - damping)
 
       if (flow.weight >= 0) {
-        // Positive flow: target gains weight
         newWeights.set(targetId, (newWeights.get(targetId) || 1.0) + contribution)
       } else {
-        // Negative flow (contradicts): target loses some weight, but floor at 0.5
         const current = newWeights.get(targetId) || 1.0
         newWeights.set(targetId, Math.max(0.5, current - contribution * 0.5))
       }
 
-      // Small reverse flow for bidirectional relationships
       if (edge.relationship === 'similar' || edge.relationship === 'refines') {
         const reverseContribution = (weights.get(targetId) || 1.0) * flow.weight * edge.strength * (1 - damping) * 0.5
         newWeights.set(sourceId, (newWeights.get(sourceId) || 1.0) + reverseContribution)
       }
     }
 
-    // Update weights
     for (const [id, w] of newWeights) {
       weights.set(id, w)
     }
@@ -88,7 +135,6 @@ export function computeEvidenceRank(
 
 /**
  * Convert raw EvidenceRank weights to visual radii.
- * Maps the weight range to a radius range suitable for rendering.
  */
 export function weightToRadius(
   weights: Map<string, number>,
@@ -102,8 +148,15 @@ export function weightToRadius(
 
   const radii = new Map<string, number>()
   for (const [id, w] of weights) {
-    const normalized = (w - minWeight) / range // 0 to 1
+    const normalized = (w - minWeight) / range
     radii.set(id, minRadius + normalized * (maxRadius - minRadius))
   }
   return radii
+}
+
+/**
+ * Get credibility info for a source type.
+ */
+export function getCredibility(sourceType: string) {
+  return SOURCE_CREDIBILITY[sourceType] || SOURCE_CREDIBILITY.journal
 }
