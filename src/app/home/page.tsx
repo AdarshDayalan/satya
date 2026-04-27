@@ -13,11 +13,11 @@ export default async function HomePage() {
   if (!user) redirect('/login')
 
   const [{ data: nodes }, { data: folders }, { data: inputs }, { data: edges }, { data: folderNodesData }] = await Promise.all([
-    supabase.from('nodes').select('*').order('created_at', { ascending: false }).limit(50),
-    supabase.from('folders').select('*').order('created_at', { ascending: false }).limit(10),
-    supabase.from('inputs').select('id, raw_content, source_type, source_metadata, status, created_at').order('created_at', { ascending: false }).limit(50),
-    supabase.from('edges').select('from_node_id, to_node_id, relationship, strength').limit(200),
-    supabase.from('folder_nodes').select('folder_id, node_id').limit(500),
+    supabase.from('nodes').select('*').order('created_at', { ascending: false }).limit(500),
+    supabase.from('folders').select('*').order('created_at', { ascending: false }).limit(50),
+    supabase.from('inputs').select('id, raw_content, source_type, source_metadata, status, created_at').order('created_at', { ascending: false }).limit(200),
+    supabase.from('edges').select('from_node_id, to_node_id, relationship, strength').limit(2000),
+    supabase.from('folder_nodes').select('folder_id, node_id').limit(1000),
   ])
 
   const allNodes = (nodes ?? []).map((n: { id: string; content: string; type: string }) => ({
