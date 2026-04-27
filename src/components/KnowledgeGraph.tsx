@@ -253,27 +253,12 @@ export default function KnowledgeGraph({
 
     graphNodes.current = visibleNodes.map((n, i) => {
       const baseRadius = nodeRadii.get(n.id) || 4
-      const role = nodeRoles.get(n.id) || 'top'
-
-      // Role-based target values
-      const targetRadius = role === 'focus' ? baseRadius * 1.5
-        : role === 'child' ? baseRadius * 1.0
-        : role === 'ancestor' ? baseRadius * 0.6
-        : role === 'sibling' ? baseRadius * 0.4
-        : baseRadius
-      const targetAlpha = role === 'focus' ? 1.0
-        : role === 'child' ? 0.85
-        : role === 'ancestor' ? 0.2
-        : role === 'sibling' ? 0.12
-        : 0.85
 
       const prev = existing.get(n.id)
       if (prev) {
         return {
           ...prev, ...n,
           radius: baseRadius,
-          targetRadius,
-          targetAlpha,
           displayRadius: prev.displayRadius ?? baseRadius,
           displayAlpha: prev.displayAlpha ?? 0.85,
         }
@@ -289,13 +274,31 @@ export default function KnowledgeGraph({
         vy: 0,
         connections: 0,
         radius: baseRadius,
-        targetRadius,
-        targetAlpha,
-        displayRadius: 0, // Start invisible, lerp in
+        displayRadius: 0,
         displayAlpha: 0,
       }
     })
-  }, [visibleNodes, nodeRadii, nodeRoles])
+  }, [visibleNodes, nodeRadii])
+
+  // Update targets whenever roles change (separate from init so it runs on focus change)
+  useEffect(() => {
+    for (const n of graphNodes.current) {
+      const baseRadius = nodeRadii.get(n.id) || n.radius || 4
+      const role = nodeRoles.get(n.id) || 'top'
+
+      n.targetRadius = role === 'focus' ? baseRadius * 2.0
+        : role === 'child' ? baseRadius * 1.2
+        : role === 'ancestor' ? baseRadius * 0.5
+        : role === 'sibling' ? baseRadius * 0.35
+        : baseRadius
+
+      n.targetAlpha = role === 'focus' ? 1.0
+        : role === 'child' ? 0.9
+        : role === 'ancestor' ? 0.15
+        : role === 'sibling' ? 0.08
+        : 0.85
+    }
+  }, [nodeRoles, nodeRadii])
 
   // Find cluster centers for folder labels
   const getClusterCenters = useCallback(() => {
@@ -450,8 +453,10 @@ export default function KnowledgeGraph({
         const color = REL_COLORS[edge.relationship] || REL_COLORS.related
         const isContradiction = edge.relationship === 'contradicts'
         const isHighlighted = hovered && (hovered.id === edge.from_node_id || hovered.id === edge.to_node_id)
-        const baseAlpha = isHighlighted ? 0.5 : 0.03
-        ctx.globalAlpha = baseAlpha
+        // Edge fades with its nodes
+        const nodeAlpha = Math.min(a.displayAlpha ?? 0.85, b.displayAlpha ?? 0.85)
+        const baseAlpha = isHighlighted ? 0.6 : (0.05 + edge.strength * 0.3)
+        ctx.globalAlpha = baseAlpha * nodeAlpha
         ctx.beginPath()
         ctx.strokeStyle = color
         ctx.lineWidth = (0.5 + edge.strength * 2) * (isHighlighted ? 1.5 : 1)
