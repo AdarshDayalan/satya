@@ -13,20 +13,19 @@ export default function CreateNodeModal({ open, onClose, onCreated }: { open: bo
 
   async function handleCreate() {
     if (!content.trim()) return
-    setSaving(true)
-    const res = await fetch('/api/nodes', {
+    // Close immediately — optimistic
+    const payload = { content, type, weight }
+    setContent('')
+    setType('idea')
+    setWeight(1.0)
+    onCreated()
+    onClose()
+    // Fire to server in background
+    fetch('/api/nodes', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content, type, weight }),
+      body: JSON.stringify(payload),
     })
-    setSaving(false)
-    if (res.ok) {
-      setContent('')
-      setType('idea')
-      setWeight(1.0)
-      onCreated()
-      onClose()
-    }
   }
 
   if (!open) return null

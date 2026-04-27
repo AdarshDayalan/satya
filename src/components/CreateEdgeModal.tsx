@@ -33,19 +33,17 @@ export default function CreateEdgeModal({
 
   async function handleCreate() {
     if (!from || !to || from === to) return
-    setSaving(true)
-    const res = await fetch('/api/edges', {
+    // Close immediately — optimistic
+    setTo('')
+    setReason('')
+    onCreated()
+    onClose()
+    // Fire to server in background
+    fetch('/api/edges', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ from_node_id: from, to_node_id: to, relationship, strength, reason }),
     })
-    setSaving(false)
-    if (res.ok) {
-      setTo('')
-      setReason('')
-      onCreated()
-      onClose()
-    }
   }
 
   if (!open) return null

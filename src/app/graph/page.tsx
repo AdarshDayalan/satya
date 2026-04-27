@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import FullGraph from '@/components/FullGraph'
+import GraphWithPanel from '@/components/GraphWithPanel'
 
 export default async function GraphPage() {
   const supabase = await createClient()
@@ -16,7 +16,7 @@ export default async function GraphPage() {
   ])
 
   return (
-    <div className="h-screen bg-[#050505] text-white flex flex-col">
+    <div className="h-screen bg-[#050505] text-white flex flex-col overflow-hidden">
       <header className="shrink-0 z-20 backdrop-blur-xl bg-[#050505]/80 border-b border-white/[0.04] px-4 py-2.5 flex items-center justify-between">
         <Link href="/home" className="text-[12px] text-neutral-600 hover:text-neutral-400 transition-colors">
           &larr; back
@@ -24,14 +24,12 @@ export default async function GraphPage() {
         <span className="text-[11px] text-neutral-600 uppercase tracking-widest">thought field</span>
         <div className="w-12" />
       </header>
-      <div className="flex-1 relative">
-        <FullGraph
-          nodes={nodes ?? []}
-          edges={edges ?? []}
-          folders={folders ?? []}
-          folderNodes={folderNodes ?? []}
-        />
-      </div>
+      <GraphWithPanel
+        nodes={nodes ?? []}
+        edges={edges ?? []}
+        folders={folders ?? []}
+        folderNodes={folderNodes ?? []}
+      />
     </div>
   )
 }

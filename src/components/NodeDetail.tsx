@@ -81,52 +81,48 @@ export default function NodeDetail({ node, connections, sourceInput, allNodes }:
   }
 
   async function handleSave(content: string) {
-    await fetch(`/api/nodes/${node.id}`, {
+    setEditing(false)
+    fetch(`/api/nodes/${node.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ content }),
-    })
-    router.refresh()
+    }).then(() => router.refresh())
   }
 
-  async function handleTypeChange(newType: string) {
-    await fetch(`/api/nodes/${node.id}`, {
+  function handleTypeChange(newType: string) {
+    fetch(`/api/nodes/${node.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ type: newType }),
-    })
-    router.refresh()
+    }).then(() => router.refresh())
   }
 
-  async function handleWeightChange(newWeight: number) {
-    await fetch(`/api/nodes/${node.id}`, {
+  function handleWeightChange(newWeight: number) {
+    fetch(`/api/nodes/${node.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ weight: newWeight }),
     })
-    router.refresh()
   }
 
   async function handleDelete() {
-    await fetch(`/api/nodes/${node.id}`, { method: 'DELETE' })
     router.push('/home')
+    fetch(`/api/nodes/${node.id}`, { method: 'DELETE' })
   }
 
-  async function handleDeleteEdge(edgeId: string) {
-    await fetch(`/api/edges/${edgeId}`, { method: 'DELETE' })
+  function handleDeleteEdge(edgeId: string) {
     setDeletingEdge(null)
-    router.refresh()
+    fetch(`/api/edges/${edgeId}`, { method: 'DELETE' }).then(() => router.refresh())
   }
 
-  async function handleUpdateEdge() {
+  function handleUpdateEdge() {
     if (!editingEdge) return
-    await fetch(`/api/edges/${editingEdge.edgeId}`, {
+    setEditingEdge(null)
+    fetch(`/api/edges/${editingEdge.edgeId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ strength: edgeStrength, relationship: edgeRelationship }),
-    })
-    setEditingEdge(null)
-    router.refresh()
+    }).then(() => router.refresh())
   }
 
   return (

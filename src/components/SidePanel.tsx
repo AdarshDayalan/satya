@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
 import { useSelection } from './SelectionContext'
 import EditModal from './EditModal'
 import ConfirmDialog from './ConfirmDialog'
@@ -47,7 +46,6 @@ interface SidePanelProps {
 }
 
 export default function SidePanel({ type, id, onClose, onNavigate, allNodes }: SidePanelProps) {
-  const router = useRouter()
   const { store, updateNode, removeNode, updateInput, removeInput } = useSelection()
   const [editing, setEditing] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -206,7 +204,7 @@ export default function SidePanel({ type, id, onClose, onNavigate, allNodes }: S
 
           <EditModal isOpen={editing} onClose={() => setEditing(false)} onSave={handleSaveNode} title="Edit node" initialValue={nodeData.content} />
           <ConfirmDialog isOpen={deleting} onClose={() => setDeleting(false)} onConfirm={handleDeleteNode} title="Delete node" message="This will remove this node and all its connections." />
-          <CreateEdgeModal open={connecting} onClose={() => setConnecting(false)} onCreated={() => router.refresh()} nodes={allNodes} fromNodeId={nodeData.id} />
+          <CreateEdgeModal open={connecting} onClose={() => setConnecting(false)} onCreated={() => {}} nodes={allNodes} fromNodeId={nodeData.id} />
         </div>
       ) : type === 'input' && inputData ? (
         <div className="p-4 space-y-5 flex-1 overflow-y-auto">

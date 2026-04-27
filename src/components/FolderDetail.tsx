@@ -28,33 +28,32 @@ export default function FolderDetail({ folder, nodes }: FolderDetailProps) {
   const [deleting, setDeleting] = useState(false)
   const [removingNode, setRemovingNode] = useState<string | null>(null)
 
-  async function handleRename(name: string) {
-    await fetch(`/api/folders/${folder.id}`, {
+  function handleRename(name: string) {
+    setEditingName(false)
+    fetch(`/api/folders/${folder.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name }),
-    })
-    router.refresh()
+    }).then(() => router.refresh())
   }
 
-  async function handleEditDesc(description: string) {
-    await fetch(`/api/folders/${folder.id}`, {
+  function handleEditDesc(description: string) {
+    setEditingDesc(false)
+    fetch(`/api/folders/${folder.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ description }),
-    })
-    router.refresh()
+    }).then(() => router.refresh())
   }
 
-  async function handleDelete() {
-    await fetch(`/api/folders/${folder.id}`, { method: 'DELETE' })
+  function handleDelete() {
     router.push('/home')
+    fetch(`/api/folders/${folder.id}`, { method: 'DELETE' })
   }
 
-  async function handleRemoveNode(nodeId: string) {
-    await fetch(`/api/folders/${folder.id}/nodes?node_id=${nodeId}`, { method: 'DELETE' })
+  function handleRemoveNode(nodeId: string) {
     setRemovingNode(null)
-    router.refresh()
+    fetch(`/api/folders/${folder.id}/nodes?node_id=${nodeId}`, { method: 'DELETE' }).then(() => router.refresh())
   }
 
   return (
