@@ -120,7 +120,7 @@ export async function POST(req: Request) {
     const prompt = EXTRACT_IDEAS_PROMPT.replace('{{raw_content}}', enrichedContent)
     const extracted = (await generateJson(model, prompt)) as {
       summary: string
-      nodes: Array<{ content: string; type: string }>
+      nodes: Array<{ content: string; type: string; source_url?: string | null }>
     }
 
     // Step 3: Create nodes with embeddings and find relationships
@@ -148,6 +148,7 @@ export async function POST(req: Request) {
           content: node.content,
           type: node.type || 'idea',
           summary: extracted.summary,
+          source_url: node.source_url || null,
           embedding: embedding ? JSON.stringify(embedding) : null,
         })
         .select()

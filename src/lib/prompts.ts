@@ -6,7 +6,7 @@ Input:
 Return JSON:
 {
   "summary": "one line summary of the overall thesis",
-  "nodes": [{ "content": "...", "type": "concept | idea | question | evidence | mechanism" }]
+  "nodes": [{ "content": "...", "type": "concept | idea | question | evidence | mechanism", "source_url": "https://... or null" }]
 }
 
 Rules:
@@ -25,7 +25,8 @@ Rules:
 - If the text describes how something works (A → B → C), extract as "mechanism" nodes.
 - Do NOT merge nodes that are distinct steps in a causal chain — keep them separate.
 - Do NOT add your own opinions or caveats. Extract what the author wrote.
-- Quality > quantity, but don't under-extract dense content.`
+- Quality > quantity, but don't under-extract dense content.
+- If the input contains URLs and research context from those URLs, set "source_url" to the specific URL the idea came from. If the idea comes from the user's own writing (not a linked source), set "source_url" to null.`
 
 export const DETECT_RELATIONSHIPS_PROMPT = `Given a new node and nearby existing nodes from a knowledge graph, find meaningful connections based on the content of the nodes themselves. Do not add external judgment — connect based on what the nodes actually say.
 

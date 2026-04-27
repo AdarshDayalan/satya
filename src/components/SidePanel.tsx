@@ -151,6 +151,37 @@ export default function SidePanel({ type, id, onClose, onNavigate, allNodes, ful
             <MarkdownContent content={nodeData.content} />
           </div>
 
+          {/* Source attribution */}
+          {(nodeData.source_url || nodeData.input_id) && (
+            <div className="space-y-1.5">
+              {nodeData.source_url && (
+                <a
+                  href={nodeData.source_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 text-[11px] text-blue-400/60 hover:text-blue-400 truncate"
+                >
+                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.2" className="shrink-0">
+                    <path d="M6 1h3v3M9 1L5 5M4 1H1v8h8V6" />
+                  </svg>
+                  {(() => { try { return new URL(nodeData.source_url).hostname } catch { return nodeData.source_url } })()}
+                </a>
+              )}
+              {nodeData.input_id && (
+                <button
+                  onClick={() => onNavigate('input', nodeData.input_id!)}
+                  className="flex items-center gap-1.5 text-[11px] text-neutral-500 hover:text-white/60"
+                >
+                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.2" className="shrink-0">
+                    <rect x="1" y="1" width="8" height="8" rx="1" />
+                    <path d="M3 3.5h4M3 5.5h3" />
+                  </svg>
+                  {nodeData.source_url ? 'from journal entry' : 'view source'}
+                </button>
+              )}
+            </div>
+          )}
+
           <div className="flex gap-2">
             <button onClick={() => setEditing(true)} className="text-[11px] text-neutral-500 hover:text-white/70">edit</button>
             <button onClick={() => setConnecting(true)} className="text-[11px] text-neutral-500 hover:text-white/70">connect</button>
