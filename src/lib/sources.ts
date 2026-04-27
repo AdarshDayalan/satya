@@ -9,6 +9,7 @@ interface DetectedSource {
   redditPath?: string
   pubmedId?: string
   isPmc?: boolean
+  doi?: string
 }
 
 const YT_REGEX = /(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]+)/
@@ -18,6 +19,27 @@ const ARXIV_REGEX = /arxiv\.org\/(?:abs|pdf)\/([\d.]+)/
 const REDDIT_REGEX = /reddit\.com\/(r\/\w+\/comments\/\w+[^\s]*)/
 const PUBMED_REGEX = /pubmed\.ncbi\.nlm\.nih\.gov\/(\d+)/
 const PMC_REGEX = /pmc\.ncbi\.nlm\.nih\.gov\/articles\/PMC(\d+)/
+const DOI_REGEX = /10\.\d{4,}\/[^\s]+/
+const ACADEMIC_DOMAINS = [
+  'link.springer.com', 'springer.com',
+  'journals.plos.org', 'plosone.org',
+  'academia.edu',
+  'researchgate.net',
+  'journalofdairyscience.org',
+  'sciencedirect.com',
+  'nature.com',
+  'cell.com',
+  'thelancet.com',
+  'bmj.com',
+  'nejm.org',
+  'wiley.com', 'onlinelibrary.wiley.com',
+  'tandfonline.com',
+  'frontiersin.org',
+  'mdpi.com',
+  'biomedcentral.com',
+  'jci.org',
+]
+const PDF_REGEX = /\.pdf(?:\?|$|#)/i
 const URL_REGEX = /https?:\/\/[^\s]+/
 const TIME_RANGE_REGEX = /(?:from\s+)?(\d{1,2}:\d{2})\s*(?:to|-)\s*(\d{1,2}:\d{2})/i
 
@@ -67,7 +89,25 @@ export function detectSource(content: string): DetectedSource {
 
   const urlMatch = content.match(URL_REGEX)
   if (urlMatch) {
-    return { type: 'article', url: urlMatch[0] }
+    const url = urlMatch[0]
+
+    // Extract DOI from URL or content
+    const doiMatch = content.match(DOI_REGEX)
+    const doi = doiMatch ? doiMatch[0].replace(/[).,;]+$/, '') : undefined
+
+    // Check if it's an academic domain
+    const isAcademic = ACADEMIC_DOMAINS.some(d => url.includes(d))
+
+    // Check if it's a PDF
+    if (PDF_REGEX.test(url)) {
+      return { type: 'research_paper', url, doi }
+    }
+
+    if (isAcademic || doi) {
+      return { type: 'research_paper', url, doi }
+    }
+
+    return { type: 'article', url }
   }
 
   return { type: 'journal', url: null }

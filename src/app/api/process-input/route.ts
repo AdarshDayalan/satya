@@ -56,7 +56,7 @@ export async function POST(req: Request) {
   const { enrichedContent, metadata: sourceMetadata } = await extractContent(
     raw_content,
     source.type,
-    { videoId: source.videoId, url: source.url, startTime: source.startTime, endTime: source.endTime, redditPath: source.redditPath, pubmedId: source.pubmedId, isPmc: source.isPmc }
+    { videoId: source.videoId, url: source.url, startTime: source.startTime, endTime: source.endTime, redditPath: source.redditPath, pubmedId: source.pubmedId, isPmc: source.isPmc, doi: source.doi }
   )
 
   // Step 1: Save raw input (never lost)

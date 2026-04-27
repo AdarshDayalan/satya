@@ -8,7 +8,7 @@ interface ExtractionResult {
 export async function extractContent(
   rawContent: string,
   sourceType: SourceType,
-  options: { videoId?: string; url?: string | null; startTime?: number; endTime?: number; redditPath?: string; pubmedId?: string; isPmc?: boolean }
+  options: { videoId?: string; url?: string | null; startTime?: number; endTime?: number; redditPath?: string; pubmedId?: string; isPmc?: boolean; doi?: string }
 ): Promise<ExtractionResult> {
   switch (sourceType) {
     case 'youtube':
@@ -17,6 +17,8 @@ export async function extractContent(
       return extractReddit(rawContent, options.redditPath)
     case 'pubmed':
       return extractPubMed(rawContent, options.pubmedId, options.isPmc)
+    case 'research_paper':
+      return extractResearchPaper(rawContent, options.url, options.doi)
     case 'article':
       return extractArticle(rawContent, options.url)
     case 'instagram':
@@ -338,6 +340,99 @@ async function extractPubMed(
     return { enrichedContent: enriched, metadata }
   } catch {
     return { enrichedContent: rawContent, metadata }
+  }
+}
+
+async function extractResearchPaper(
+  rawContent: string,
+  url: string | null | undefined,
+  doi: string | undefined
+): Promise<ExtractionResult> {
+  const metadata: Record<string, unknown> = { url }
+
+  // Try to find DOI from URL if not provided
+  let resolvedDoi = doi
+  if (!resolvedDoi && url) {
+    // Common patterns: /article/10.XXXX/..., ?id=10.XXXX/...
+    const doiFromUrl = url.match(/10\.\d{4,}\/[^\s?#]+/)
+    if (doiFromUrl) resolvedDoi = doiFromUrl[0].replace(/[).,;]+$/, '')
+  }
+
+  // CrossRef API — free, no key needed, covers millions of papers
+  if (resolvedDoi) {
+    try {
+      const res = await fetch(
+        `https://api.crossref.org/works/${encodeURIComponent(resolvedDoi)}`,
+        {
+          headers: { 'User-Agent': 'Satya/1.0 (mailto:hello@satya.app)' },
+          signal: AbortSignal.timeout(8000),
+        }
+      )
+      if (res.ok) {
+        const data = await res.json()
+        const work = data.message
+
+        metadata.doi = resolvedDoi
+        metadata.title = work.title?.[0]
+        metadata.journal = work['container-title']?.[0]
+        metadata.year = work.published?.['date-parts']?.[0]?.[0] || work.created?.['date-parts']?.[0]?.[0]
+        metadata.type = work.type
+
+        // Authors
+        const authors = (work.author ?? [])
+          .slice(0, 6)
+          .map((a: { given?: string; family?: string }) =>
+            [a.given, a.family].filter(Boolean).join(' ')
+          )
+          .join(', ')
+        if (authors) metadata.authors = authors
+
+        // Abstract (CrossRef sometimes has it)
+        let abstract = ''
+        if (work.abstract) {
+          abstract = work.abstract
+            .replace(/<[^>]+>/g, '') // Strip JATS XML tags
+            .replace(/\s+/g, ' ')
+            .trim()
+        }
+
+        // Subject/keywords
+        const subjects = (work.subject ?? []).join(', ')
+        if (subjects) metadata.subjects = subjects
+
+        const enriched = [
+          `[Research Paper]`,
+          metadata.title ? `Title: ${metadata.title}` : null,
+          authors ? `Authors: ${authors}` : null,
+          metadata.journal ? `Journal: ${metadata.journal}${metadata.year ? ` (${metadata.year})` : ''}` : null,
+          metadata.doi ? `DOI: ${metadata.doi}` : null,
+          subjects ? `Subjects: ${subjects}` : null,
+          '',
+          abstract ? `Abstract:\n${abstract}` : null,
+          '',
+          rawContent.replace(/https?:\/\/[^\s]+/g, '').trim() || null,
+        ].filter(Boolean).join('\n')
+
+        return { enrichedContent: enriched, metadata }
+      }
+    } catch { /* CrossRef failed, fall through */ }
+  }
+
+  // Fallback: try scraping the page like an article
+  const articleResult = await extractArticle(rawContent, url)
+
+  // If article extraction failed (captcha), return with research_paper label
+  if ((articleResult.metadata as Record<string, unknown>).extractionFailed) {
+    return {
+      enrichedContent: `[Research Paper — content could not be extracted]\nURL: ${url}\n\n${rawContent.replace(/https?:\/\/[^\s]+/g, '').trim()}`.trim(),
+      metadata: { ...metadata, extractionFailed: true },
+    }
+  }
+
+  // Re-label as research paper
+  return {
+    enrichedContent: articleResult.enrichedContent.replace('[Article]', '[Research Paper]'),
+    metadata: { ...articleResult.metadata, ...metadata },
   }
 }
 
