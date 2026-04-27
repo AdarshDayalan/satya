@@ -2,30 +2,32 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { detectSource } from '@/lib/sources'
 
-// Split bulk paste into individual items — each URL with its surrounding context
+// Determine if input is a journal entry (prose with embedded links) or bare URL list
 function splitBulkInput(raw: string): string[] {
   const lines = raw.split('\n')
   const urlRegex = /https?:\/\/[^\s]+/
 
-  // Count URLs
   const urlCount = lines.filter(l => urlRegex.test(l)).length
 
-  // If 0 or 1 URL, treat as single input
+  // 0 or 1 URL → single input
   if (urlCount <= 1) return [raw]
 
-  // Multiple URLs — split into chunks, each URL gets preceding context
+  // Check if this is prose with embedded links (journal) vs bare URL list
+  const proseLines = lines.filter(l => !urlRegex.test(l) && l.trim().length > 0)
+  const totalProseChars = proseLines.reduce((sum, l) => sum + l.trim().length, 0)
+
+  // If substantial prose, it's a journal — keep as one entry
+  // The processing pipeline will extract and research each URL internally
+  if (totalProseChars > 100) return [raw]
+
+  // Bare URL list — split into individual items
   const chunks: string[] = []
   let currentContext: string[] = []
 
   for (const line of lines) {
     if (urlRegex.test(line)) {
-      // This line has a URL — bundle with preceding context
-      const contextText = currentContext
-        .filter(l => l.trim())
-        .join('\n')
-      const chunk = contextText
-        ? `${contextText}\n${line}`
-        : line
+      const contextText = currentContext.filter(l => l.trim()).join('\n')
+      const chunk = contextText ? `${contextText}\n${line}` : line
       chunks.push(chunk.trim())
       currentContext = []
     } else {
@@ -33,7 +35,6 @@ function splitBulkInput(raw: string): string[] {
     }
   }
 
-  // If there's trailing context with no URL, append to last chunk or make its own
   const trailing = currentContext.filter(l => l.trim()).join('\n')
   if (trailing && chunks.length > 0) {
     chunks[chunks.length - 1] += `\n${trailing}`
