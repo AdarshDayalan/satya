@@ -5,7 +5,7 @@ import KnowledgeGraph from './KnowledgeGraph'
 
 interface Profile {
   display_name: string
-  bio: string
+  bio?: string
   slug: string
 }
 

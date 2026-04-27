@@ -21,7 +21,9 @@ export async function POST(req: Request) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { name, description } = await req.json()
-  const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40)
+  const randomSuffix = Math.random().toString(36).slice(2, 10)
+  const base = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 30)
+  const slug = `${base}-${randomSuffix}`
 
   const { data, error } = await supabase
     .from('spaces')

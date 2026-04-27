@@ -81,6 +81,10 @@ export default function KnowledgeGraph({
   const time = useRef(0)
   const router = useRouter()
 
+  // Keep onNodeClick in a ref so the event listener closure always has the latest
+  const onNodeClickRef = useRef(onNodeClick)
+  onNodeClickRef.current = onNodeClick
+
   // Interaction state
   const hoveredNode = useRef<GraphNode | null>(null)
   const dragNode = useRef<GraphNode | null>(null)
@@ -524,8 +528,8 @@ export default function KnowledgeGraph({
           const dx = Math.abs((mouse.current.x - pan.current.x) / zoom.current - node.x!)
           const dy = Math.abs((mouse.current.y - pan.current.y) / zoom.current - node.y!)
           if (dx < 2 && dy < 2) {
-            if (onNodeClick) {
-              onNodeClick(node.id)
+            if (onNodeClickRef.current) {
+              onNodeClickRef.current(node.id)
             } else {
               router.push(`/nodes/${node.id}`)
             }
