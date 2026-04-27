@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import { useSelection } from './SelectionContext'
 import EditModal from './EditModal'
 import ConfirmDialog from './ConfirmDialog'
 import CreateEdgeModal from './CreateEdgeModal'
@@ -43,54 +44,19 @@ interface SidePanelProps {
   allNodes: Array<{ id: string; content: string; type: string }>
 }
 
-interface NodeData {
-  id: string; content: string; type: string; weight: number; created_at: string; input_id: string | null
-}
-
-interface Connection {
-  node: { id: string; content: string; type: string }
-  relationship: string; strength: number; reason: string; edgeId: string
-}
-
-interface InputData {
-  id: string; raw_content: string; source_type: string; source_metadata: Record<string, unknown>
-  source_url: string | null; status: string; created_at: string
-}
-
 export default function SidePanel({ type, id, onClose, onNavigate, allNodes }: SidePanelProps) {
   const router = useRouter()
-  const [loading, setLoading] = useState(true)
-  const [nodeData, setNodeData] = useState<NodeData | null>(null)
-  const [connections, setConnections] = useState<Connection[]>([])
-  const [inputData, setInputData] = useState<InputData | null>(null)
-  const [inputNodes, setInputNodes] = useState<Array<{ id: string; content: string; type: string }>>([])
+  const { store, updateNode, removeNode, updateInput, removeInput } = useSelection()
   const [editing, setEditing] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [connecting, setConnecting] = useState(false)
 
-  const fetchData = useCallback(async () => {
-    setLoading(true)
-    if (type === 'node') {
-      const res = await fetch(`/api/nodes/${id}`)
-      if (res.ok) {
-        const data = await res.json()
-        setNodeData(data.node)
-        setConnections(data.connections || [])
-      }
-    } else {
-      const res = await fetch(`/api/inputs/${id}`)
-      if (res.ok) {
-        const data = await res.json()
-        setInputData(data.input)
-        setInputNodes(data.nodes || [])
-      }
-    }
-    setLoading(false)
-  }, [type, id])
+  // Read directly from store — instant, no fetch
+  const nodeData = type === 'node' ? store.nodes.get(id) ?? null : null
+  const connections = type === 'node' ? store.nodeEdges(id) : []
+  const inputData = type === 'input' ? store.inputs.get(id) ?? null : null
+  const inputNodesList = type === 'input' ? store.inputNodes(id) : []
 
-  useEffect(() => { fetchData() }, [fetchData])
-
-  // Close on Escape
   useEffect(() => {
     function handleKey(e: KeyboardEvent) { if (e.key === 'Escape') onClose() }
     document.addEventListener('keydown', handleKey)
@@ -98,35 +64,37 @@ export default function SidePanel({ type, id, onClose, onNavigate, allNodes }: S
   }, [onClose])
 
   async function handleSaveNode(content: string) {
+    // Optimistic update
+    updateNode(id, { content })
+    setEditing(false)
+    // Sync to server in background
     await fetch(`/api/nodes/${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ content }),
     })
-    fetchData()
-    router.refresh()
   }
 
   async function handleDeleteNode() {
-    await fetch(`/api/nodes/${id}`, { method: 'DELETE' })
+    removeNode(id)
     onClose()
-    router.refresh()
+    await fetch(`/api/nodes/${id}`, { method: 'DELETE' })
   }
 
   async function handleSaveInput(content: string) {
+    updateInput(id, { raw_content: content })
+    setEditing(false)
     await fetch(`/api/inputs/${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ raw_content: content }),
     })
-    fetchData()
-    router.refresh()
   }
 
   async function handleDeleteInput() {
-    await fetch(`/api/inputs/${id}`, { method: 'DELETE' })
+    removeInput(id)
     onClose()
-    router.refresh()
+    await fetch(`/api/inputs/${id}`, { method: 'DELETE' })
   }
 
   return (
@@ -139,13 +107,8 @@ export default function SidePanel({ type, id, onClose, onNavigate, allNodes }: S
         <button onClick={onClose} className="text-neutral-600 hover:text-white/70 text-[11px]">✕</button>
       </div>
 
-      {loading ? (
-        <div className="flex-1 flex items-center justify-center">
-          <span className="text-[12px] text-neutral-600 animate-pulse">loading...</span>
-        </div>
-      ) : type === 'node' && nodeData ? (
+      {type === 'node' && nodeData ? (
         <div className="p-4 space-y-5 flex-1 overflow-y-auto">
-          {/* Node content */}
           <div className="space-y-2">
             <div className="flex items-center gap-2">
               <span className={`text-[10px] uppercase tracking-widest ${typeColors[nodeData.type] || 'text-neutral-600'}`}>
@@ -159,14 +122,12 @@ export default function SidePanel({ type, id, onClose, onNavigate, allNodes }: S
             <p className="text-[14px] text-white/85 leading-relaxed">{nodeData.content}</p>
           </div>
 
-          {/* Actions */}
           <div className="flex gap-2">
             <button onClick={() => setEditing(true)} className="text-[11px] text-neutral-500 hover:text-white/70">edit</button>
             <button onClick={() => setConnecting(true)} className="text-[11px] text-neutral-500 hover:text-white/70">connect</button>
             <button onClick={() => setDeleting(true)} className="text-[11px] text-neutral-500 hover:text-red-400/70">delete</button>
           </div>
 
-          {/* Connections */}
           {connections.length > 0 && (
             <div className="space-y-3">
               <h3 className="text-[10px] text-neutral-500 uppercase tracking-widest">Connections</h3>
@@ -174,19 +135,19 @@ export default function SidePanel({ type, id, onClose, onNavigate, allNodes }: S
                 <button
                   key={i}
                   onClick={() => onNavigate('node', c.node.id)}
-                  className="w-full text-left px-3 py-2 rounded-lg bg-white/[0.02] border border-white/[0.04] hover:bg-white/[0.05] transition-colors"
+                  className="w-full text-left px-3 py-2 rounded-lg bg-white/[0.02] border border-white/[0.04] hover:bg-white/[0.05]"
                 >
                   <p className="text-[12px] text-white/70 leading-snug">{c.node.content}</p>
                   <div className="flex items-center gap-2 mt-1">
                     <span className={`text-[10px] ${relColors[c.relationship] || 'text-neutral-600'}`}>
                       {c.relationship.replace('_', ' ')}
                     </span>
-                    {c.reason && (
+                    {c.reason ? (
                       <>
                         <span className="text-neutral-800">·</span>
                         <span className="text-[10px] text-neutral-700 truncate">{c.reason}</span>
                       </>
-                    )}
+                    ) : null}
                   </div>
                 </button>
               ))}
@@ -199,11 +160,10 @@ export default function SidePanel({ type, id, onClose, onNavigate, allNodes }: S
 
           <EditModal isOpen={editing} onClose={() => setEditing(false)} onSave={handleSaveNode} title="Edit node" initialValue={nodeData.content} />
           <ConfirmDialog isOpen={deleting} onClose={() => setDeleting(false)} onConfirm={handleDeleteNode} title="Delete node" message="This will remove this node and all its connections." />
-          <CreateEdgeModal open={connecting} onClose={() => setConnecting(false)} onCreated={() => { fetchData(); router.refresh() }} nodes={allNodes} fromNodeId={nodeData.id} />
+          <CreateEdgeModal open={connecting} onClose={() => setConnecting(false)} onCreated={() => router.refresh()} nodes={allNodes} fromNodeId={nodeData.id} />
         </div>
       ) : type === 'input' && inputData ? (
         <div className="p-4 space-y-5 flex-1 overflow-y-auto">
-          {/* Source info */}
           <div className="space-y-2">
             <div className="flex items-center gap-2">
               <span className={`text-[10px] uppercase tracking-widest font-medium ${SOURCE_CONFIG[inputData.source_type]?.color || 'text-white/50'}`}>
@@ -212,10 +172,6 @@ export default function SidePanel({ type, id, onClose, onNavigate, allNodes }: S
               <span className="text-neutral-800">·</span>
               <span className="text-[10px] text-neutral-700">
                 {new Date(inputData.created_at).toLocaleDateString()}
-              </span>
-              <span className="text-neutral-800">·</span>
-              <span className={`text-[10px] ${inputData.status === 'processed' ? 'text-green-400/50' : 'text-amber-400/50'}`}>
-                {inputData.status}
               </span>
             </div>
 
@@ -235,28 +191,25 @@ export default function SidePanel({ type, id, onClose, onNavigate, allNodes }: S
             )}
           </div>
 
-          {/* Raw content */}
           <div className="bg-white/[0.02] border border-white/[0.04] rounded-lg px-3 py-2.5">
             <p className="text-[12px] text-white/60 leading-relaxed whitespace-pre-wrap">
               {inputData.raw_content}
             </p>
           </div>
 
-          {/* Actions */}
           <div className="flex gap-2">
             <button onClick={() => setEditing(true)} className="text-[11px] text-neutral-500 hover:text-white/70">edit</button>
             <button onClick={() => setDeleting(true)} className="text-[11px] text-neutral-500 hover:text-red-400/70">delete</button>
           </div>
 
-          {/* Extracted nodes */}
-          {inputNodes.length > 0 && (
+          {inputNodesList.length > 0 && (
             <div className="space-y-2">
               <h3 className="text-[10px] text-neutral-500 uppercase tracking-widest">Extracted Nodes</h3>
-              {inputNodes.map((node) => (
+              {inputNodesList.map((node) => (
                 <button
                   key={node.id}
                   onClick={() => onNavigate('node', node.id)}
-                  className="w-full text-left px-3 py-2 rounded-lg bg-white/[0.02] border border-white/[0.04] hover:bg-white/[0.05] transition-colors"
+                  className="w-full text-left px-3 py-2 rounded-lg bg-white/[0.02] border border-white/[0.04] hover:bg-white/[0.05]"
                 >
                   <p className="text-[12px] text-white/70 leading-snug">{node.content}</p>
                   <span className={`text-[10px] mt-1 inline-block ${typeColors[node.type] || 'text-neutral-600'}`}>

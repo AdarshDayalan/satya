@@ -9,7 +9,22 @@ const inter = Inter({
 
 export const metadata: Metadata = {
   title: "Satya",
-  description: "Truth emerges",
+  description: "Build your knowledge graph. Truth emerges from connections.",
+  icons: {
+    icon: "/icon.svg",
+    apple: "/icon.svg",
+  },
+  openGraph: {
+    title: "Satya",
+    description: "Build your knowledge graph. Truth emerges from connections.",
+    siteName: "Satya",
+    type: "website",
+  },
+  twitter: {
+    card: "summary",
+    title: "Satya",
+    description: "Build your knowledge graph. Truth emerges from connections.",
+  },
 };
 
 export default function RootLayout({

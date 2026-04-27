@@ -34,7 +34,11 @@ export default async function HomePage() {
   }
 
   return (
-    <SelectionProvider allNodes={allNodes}>
+    <SelectionProvider
+      initialNodes={nodes ?? []}
+      initialEdges={edges ?? []}
+      initialInputs={inputs ?? []}
+    >
       <AppShell
         filesPanel={
           <SourceSidebar

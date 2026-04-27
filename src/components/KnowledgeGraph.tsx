@@ -66,12 +66,14 @@ export default function KnowledgeGraph({
   folders,
   folderNodes,
   fullscreen = false,
+  onNodeClick,
 }: {
   nodes: GraphNode[]
   edges: GraphEdge[]
   folders: Folder[]
   folderNodes: FolderNode[]
   fullscreen?: boolean
+  onNodeClick?: (nodeId: string) => void
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const animRef = useRef<number>(0)
@@ -522,7 +524,11 @@ export default function KnowledgeGraph({
           const dx = Math.abs((mouse.current.x - pan.current.x) / zoom.current - node.x!)
           const dy = Math.abs((mouse.current.y - pan.current.y) / zoom.current - node.y!)
           if (dx < 2 && dy < 2) {
-            router.push(`/nodes/${node.id}`)
+            if (onNodeClick) {
+              onNodeClick(node.id)
+            } else {
+              router.push(`/nodes/${node.id}`)
+            }
           }
         }
       }

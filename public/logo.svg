@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" fill="none">
+  <!-- Three converging lines forming a minimal truth/convergence mark -->
+  <circle cx="60" cy="60" r="54" stroke="white" stroke-width="1.5" opacity="0.15"/>
+  <path d="M60 18 L60 102" stroke="white" stroke-width="2" stroke-linecap="round" opacity="0.9"/>
+  <path d="M28 42 L60 72 L92 42" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" opacity="0.6"/>
+  <circle cx="60" cy="72" r="4" fill="white" opacity="0.8"/>
+</svg>

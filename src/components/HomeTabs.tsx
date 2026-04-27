@@ -88,7 +88,7 @@ export default function HomeTabs({
 
       {tab === 'graph' && (
         <div className="relative">
-          <KnowledgeGraph nodes={nodes} edges={edges} folders={folders} folderNodes={folderNodes} />
+          <KnowledgeGraph nodes={nodes} edges={edges} folders={folders} folderNodes={folderNodes} onNodeClick={(id) => select('node', id)} />
           <button
             onClick={() => setCreateOpen(true)}
             className="absolute bottom-3 left-3 text-[11px] text-neutral-600 hover:text-white/70 px-2 py-1 rounded bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] transition-colors"

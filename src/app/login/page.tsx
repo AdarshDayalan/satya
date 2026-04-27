@@ -34,7 +34,15 @@ export default function LoginPage() {
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] rounded-full bg-white/[0.015] blur-3xl pointer-events-none" />
 
       <div className="w-full max-w-sm space-y-10 relative z-10 animate-fade-up">
-        <div className="text-center space-y-3">
+        <div className="text-center space-y-4">
+          <div className="flex justify-center">
+            <svg width="48" height="48" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <circle cx="60" cy="60" r="54" stroke="white" strokeWidth="1.5" opacity="0.15"/>
+              <path d="M60 18 L60 102" stroke="white" strokeWidth="2" strokeLinecap="round" opacity="0.9"/>
+              <path d="M28 42 L60 72 L92 42" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" opacity="0.6"/>
+              <circle cx="60" cy="72" r="4" fill="white" opacity="0.8"/>
+            </svg>
+          </div>
           <h1 className="text-4xl font-light text-white tracking-tight">Satya</h1>
           <p className="text-neutral-500 text-sm tracking-wide">truth emerges</p>
         </div>
