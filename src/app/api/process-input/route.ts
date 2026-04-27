@@ -6,6 +6,8 @@ import {
   DETECT_RELATIONSHIPS_PROMPT,
   SUGGEST_FOLDER_PROMPT,
 } from '@/lib/prompts'
+import { detectSource } from '@/lib/sources'
+import { extractContent } from '@/lib/extractors'
 
 async function generateJson(
   model: ReturnType<typeof getModel>,
@@ -34,7 +36,17 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const { raw_content, source_url, input_type } = await req.json()
+  const { raw_content } = await req.json()
+
+  // Auto-detect source type from content
+  const source = detectSource(raw_content)
+
+  // Extract enriched content from source (YouTube transcript, article text, etc.)
+  const { enrichedContent, metadata: sourceMetadata } = await extractContent(
+    raw_content,
+    source.type,
+    { videoId: source.videoId, url: source.url, startTime: source.startTime, endTime: source.endTime, redditPath: source.redditPath, pubmedId: source.pubmedId }
+  )
 
   // Step 1: Save raw input (never lost)
   const { data: input, error: inputError } = await supabase
@@ -42,8 +54,10 @@ export async function POST(req: Request) {
     .insert({
       user_id: user.id,
       raw_content,
-      source_url: source_url || null,
-      input_type: input_type || 'text',
+      source_url: source.url || null,
+      input_type: source.type,
+      source_type: source.type,
+      source_metadata: sourceMetadata,
       status: 'processing',
     })
     .select()
@@ -57,7 +71,7 @@ export async function POST(req: Request) {
     const model = getModel()
 
     // Step 2: Extract meaning nodes (with retry)
-    const prompt = EXTRACT_IDEAS_PROMPT.replace('{{raw_content}}', raw_content)
+    const prompt = EXTRACT_IDEAS_PROMPT.replace('{{raw_content}}', enrichedContent)
     const extracted = (await generateJson(model, prompt)) as {
       summary: string
       nodes: Array<{ content: string; type: string }>

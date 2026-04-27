@@ -3,6 +3,8 @@ import { redirect } from 'next/navigation'
 import InputBox from '@/components/InputBox'
 import NodeList from '@/components/NodeList'
 import FolderList from '@/components/FolderList'
+import SourceSidebar from '@/components/SourceSidebar'
+import HomeTabs from '@/components/HomeTabs'
 
 export default async function HomePage() {
   const supabase = await createClient()
@@ -10,17 +12,26 @@ export default async function HomePage() {
 
   if (!user) redirect('/login')
 
-  const [{ data: nodes }, { data: folders }] = await Promise.all([
+  const [{ data: nodes }, { data: folders }, { data: inputs }, { data: edges }] = await Promise.all([
     supabase
       .from('nodes')
       .select('*')
       .order('created_at', { ascending: false })
-      .limit(20),
+      .limit(50),
     supabase
       .from('folders')
       .select('*')
       .order('created_at', { ascending: false })
       .limit(10),
+    supabase
+      .from('inputs')
+      .select('id, raw_content, source_type, source_metadata, status, created_at')
+      .order('created_at', { ascending: false })
+      .limit(50),
+    supabase
+      .from('edges')
+      .select('from_node_id, to_node_id, relationship, strength')
+      .limit(200),
   ])
 
   return (
@@ -40,11 +51,18 @@ export default async function HomePage() {
         </form>
       </header>
 
-      <main className="max-w-xl mx-auto px-4 py-10 space-y-10 relative z-10">
-        <InputBox />
-        <FolderList folders={folders ?? []} />
-        <NodeList nodes={nodes ?? []} />
-      </main>
+      <div className="flex relative z-10" style={{ minHeight: 'calc(100vh - 49px)' }}>
+        <SourceSidebar inputs={inputs ?? []} />
+
+        <main className="flex-1 max-w-2xl mx-auto px-6 py-10 space-y-10">
+          <InputBox />
+          <HomeTabs
+            nodes={nodes ?? []}
+            edges={edges ?? []}
+            folders={folders ?? []}
+          />
+        </main>
+      </div>
     </div>
   )
 }
