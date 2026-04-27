@@ -47,7 +47,33 @@ export async function POST(req: Request) {
     )
   }
 
-  const { raw_content } = await req.json()
+  const body = await req.json()
+  const { input_id, raw_content: rawContentFromBody } = body
+
+  // If input_id provided, load the pre-saved input (from bulk capture)
+  let raw_content: string
+  let input: { id: string } | null = null
+
+  if (input_id) {
+    const { data: existing } = await supabase
+      .from('inputs')
+      .select('*')
+      .eq('id', input_id)
+      .eq('user_id', user.id)
+      .single()
+
+    if (!existing) {
+      return NextResponse.json({ error: 'Input not found' }, { status: 404 })
+    }
+
+    raw_content = existing.raw_content
+    input = existing
+
+    // Update status to processing
+    await supabase.from('inputs').update({ status: 'processing' }).eq('id', input_id)
+  } else {
+    raw_content = rawContentFromBody
+  }
 
   // Auto-detect source type from content
   const source = detectSource(raw_content)
@@ -59,24 +85,33 @@ export async function POST(req: Request) {
     { videoId: source.videoId, url: source.url, startTime: source.startTime, endTime: source.endTime, redditPath: source.redditPath, pubmedId: source.pubmedId, isPmc: source.isPmc, doi: source.doi }
   )
 
-  // Step 1: Save raw input (never lost)
-  const { data: input, error: inputError } = await supabase
-    .from('inputs')
-    .insert({
-      user_id: user.id,
-      raw_content,
-      source_url: source.url || null,
-      input_type: source.type,
-      source_type: source.type,
-      source_metadata: sourceMetadata,
-      status: 'processing',
-    })
-    .select()
-    .single()
+  // Save raw input if not already saved (non-bulk flow)
+  if (!input) {
+    const { data: newInput, error: inputError } = await supabase
+      .from('inputs')
+      .insert({
+        user_id: user.id,
+        raw_content,
+        source_url: source.url || null,
+        input_type: source.type,
+        source_type: source.type,
+        source_metadata: sourceMetadata,
+        status: 'processing',
+      })
+      .select()
+      .single()
 
-  if (inputError) {
-    return NextResponse.json({ error: 'Failed to save input' }, { status: 500 })
+    if (inputError) {
+      return NextResponse.json({ error: 'Failed to save input' }, { status: 500 })
+    }
+    input = newInput
+  } else {
+    // Update metadata for pre-saved input
+    await supabase.from('inputs').update({ source_metadata: sourceMetadata }).eq('id', input.id)
   }
+
+  // At this point input is guaranteed non-null
+  const inputRecord = input!
 
   try {
     const model = getModel(aiConfig.apiKey, aiConfig.provider as Provider, aiConfig.model)
@@ -109,7 +144,7 @@ export async function POST(req: Request) {
         .from('nodes')
         .insert({
           user_id: user.id,
-          input_id: input.id,
+          input_id: inputRecord.id,
           content: node.content,
           type: node.type || 'idea',
           summary: extracted.summary,
@@ -263,10 +298,10 @@ export async function POST(req: Request) {
     await supabase
       .from('inputs')
       .update({ status: 'processed', processed_at: new Date().toISOString() })
-      .eq('id', input.id)
+      .eq('id', inputRecord.id)
 
     return NextResponse.json({
-      input,
+      input: inputRecord,
       nodes: createdNodes,
       edges: createdEdges,
       folder: folderSuggestion,
@@ -276,12 +311,12 @@ export async function POST(req: Request) {
     await supabase
       .from('inputs')
       .update({ status: 'failed' })
-      .eq('id', input.id)
+      .eq('id', inputRecord.id)
 
     return NextResponse.json({
       error: 'Processing failed',
       message: err instanceof Error ? err.message : 'Unknown error',
-      input,
+      input: inputRecord,
     }, { status: 500 })
   }
 }

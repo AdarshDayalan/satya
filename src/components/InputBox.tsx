@@ -97,48 +97,68 @@ export default function InputBox() {
         throw new Error(data.error || 'Failed to save')
       }
 
+      const captureData = await captureRes.json()
+      const isBulk = captureData.bulk
+      const count = captureData.count || 1
+
       // Instant feedback — clear input immediately
       setState('captured')
-      setStatusMsg('captured')
+      setStatusMsg(isBulk ? `${count} sources captured` : 'captured')
       setContent('')
       setExpanded(false)
       router.refresh()
 
-      // Step 2: Process in background (don't await — fire and forget)
+      // Step 2: Process each input in background (fire and forget)
       setState('processing')
-      setStatusMsg('extracting meaning...')
+      setStatusMsg(isBulk ? `extracting meaning from ${count} sources...` : 'extracting meaning...')
 
-      fetch('/api/process-input', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ raw_content: submittedContent }),
-      }).then(async (res) => {
-        if (res.ok) {
-          const data = await res.json()
-          const nodes = data.nodes?.length ?? 0
-          const edges = data.edges?.length ?? 0
-          const folder = data.folder?.name
-          setStatusMsg(
-            `${nodes} nodes · ${edges} connections` +
-            (folder ? ` · theme: ${folder}` : '')
-          )
+      // For bulk, process each input independently
+      const inputs = captureData.inputs || [captureData.input]
+      const processPromises = inputs.map((input: { id: string }) =>
+        fetch('/api/process-input', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ input_id: input.id }),
+        }).catch(() => null)
+      )
+
+      // Also fire with raw_content for single input (backward compat)
+      if (!isBulk) {
+        fetch('/api/process-input', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ raw_content: submittedContent }),
+        }).then(async (res) => {
+          if (res.ok) {
+            const data = await res.json()
+            const nodes = data.nodes?.length ?? 0
+            const edges = data.edges?.length ?? 0
+            const folder = data.folder?.name
+            setStatusMsg(
+              `${nodes} nodes · ${edges} connections` +
+              (folder ? ` · theme: ${folder}` : '')
+            )
+            setState('done')
+            router.refresh()
+          } else {
+            setStatusMsg('extraction failed — input saved')
+            setState('error')
+          }
+          setTimeout(() => { setState('idle'); setStatusMsg('') }, 5000)
+        }).catch(() => {
+          setStatusMsg('extraction failed — input saved')
+          setState('error')
+          setTimeout(() => { setState('idle'); setStatusMsg('') }, 5000)
+        })
+      } else {
+        // For bulk, just wait for all and show summary
+        Promise.allSettled(processPromises).then(() => {
+          setStatusMsg(`${count} sources processed`)
           setState('done')
           router.refresh()
-        } else {
-          const data = await res.json()
-          setStatusMsg(data.message || 'extraction failed — input saved')
-          setState('error')
-        }
-        // Auto-clear status after a few seconds
-        setTimeout(() => {
-          setState('idle')
-          setStatusMsg('')
-        }, 5000)
-      }).catch(() => {
-        setStatusMsg('extraction failed — input saved')
-        setState('error')
-        setTimeout(() => { setState('idle'); setStatusMsg('') }, 5000)
-      })
+          setTimeout(() => { setState('idle'); setStatusMsg('') }, 5000)
+        })
+      }
 
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save')

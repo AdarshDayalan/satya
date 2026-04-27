@@ -23,6 +23,8 @@ export async function extractContent(
       return extractArticle(rawContent, options.url)
     case 'instagram':
       return extractInstagram(rawContent, options.url)
+    case 'journal':
+      return extractJournal(rawContent)
     default:
       return { enrichedContent: rawContent, metadata: {} }
   }
