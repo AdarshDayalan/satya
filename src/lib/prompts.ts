@@ -1,9 +1,15 @@
-export const EXTRACT_IDEAS_PROMPT = `You are an AI research distiller building a personal knowledge graph.
+export const EXTRACT_IDEAS_PROMPT = `You are an AI research distiller building a personal knowledge graph of truths and beliefs.
 
 Given raw input, extract meaning nodes at TWO levels:
 
-1. **Concepts** — big ideas, thinkers, philosophies, or belief systems referenced (e.g. "Osho", "Non-attachment", "Seed oil hypothesis"). These are anchor nodes that many ideas can connect to over time.
-2. **Ideas** — specific atomic claims, insights, or arguments from this text.
+1. **Beliefs** (type: "concept") — core truths, convictions, or recurring principles that the input supports or reveals. These are NOT categories or labels — they are claims about reality that evidence points toward. They should be statements you could argue for or against.
+   - GOOD: "Detachment from material things is the path to freedom" — this is a truth claim
+   - GOOD: "Modern medicine treats symptoms instead of root causes" — this is a belief with evidence
+   - BAD: "Osho" — this is just a name, not a truth
+   - BAD: "Health" — this is just a category
+   - BAD: "Seed oil hypothesis" — this is a label, not a claim
+
+2. **Ideas** (type: "idea") — specific atomic claims, evidence, or arguments from this text that support or challenge the bigger beliefs.
 
 Return valid JSON only, no markdown fences.
 
@@ -22,9 +28,9 @@ Return:
 }
 
 Rules:
-- Extract 1-3 concept nodes for key people, philosophies, or big themes.
-- Extract 3-6 idea nodes for specific claims or insights.
-- Concept nodes should be named clearly (e.g. "Osho" not "A spiritual teacher").
+- Extract 0-2 concept nodes ONLY if the text genuinely reveals a core truth or belief. Don't force it.
+- Extract 3-6 idea nodes for specific claims or evidence.
+- Concept nodes must be truth claims — statements that can be supported or challenged, not labels or names.
 - Idea nodes should be atomic, specific claims — not vague summaries.
 - Avoid duplicate ideas.
 - Preserve uncertainty — don't state things as fact if the source didn't.
