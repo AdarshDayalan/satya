@@ -981,6 +981,156 @@ export default function KnowledgeGraph({
   )
 }
 
+// === Graph Search Bar ===
+function GraphSearchBar({ nodes, nodeRadii, onSelect }: {
+  nodes: GraphNode[]
+  nodeRadii: Map<string, number>
+  onSelect: (nodeId: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const [typeFilter, setTypeFilter] = useState<string | null>(null)
+  const [selectedIdx, setSelectedIdx] = useState(0)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  const types = ['concept', 'idea', 'question', 'source', 'synthesis'] as const
+
+  const results = useMemo(() => {
+    if (!query && !typeFilter) return []
+    return nodes
+      .filter(n => {
+        if (typeFilter && n.type !== typeFilter) return false
+        if (query) {
+          const q = query.toLowerCase()
+          return n.content.toLowerCase().includes(q) || n.type.toLowerCase().includes(q)
+        }
+        return true
+      })
+      .sort((a, b) => (nodeRadii.get(b.id) || 0) - (nodeRadii.get(a.id) || 0))
+      .slice(0, 12)
+  }, [nodes, query, typeFilter, nodeRadii])
+
+  // Reset selection when results change
+  useEffect(() => { setSelectedIdx(0) }, [results.length, query, typeFilter])
+
+  function handleKeyDown(e: React.KeyboardEvent) {
+    if (e.key === 'ArrowDown') { e.preventDefault(); setSelectedIdx(i => Math.min(i + 1, results.length - 1)) }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setSelectedIdx(i => Math.max(i - 1, 0)) }
+    else if (e.key === 'Enter' && results[selectedIdx]) {
+      e.preventDefault()
+      onSelect(results[selectedIdx].id)
+      setOpen(false); setQuery(''); setTypeFilter(null)
+    }
+    else if (e.key === 'Escape') { setOpen(false); setQuery(''); setTypeFilter(null) }
+  }
+
+  function selectResult(id: string) {
+    onSelect(id)
+    setOpen(false); setQuery(''); setTypeFilter(null)
+  }
+
+  // Cmd+K / Ctrl+K to open
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault()
+        setOpen(prev => !prev)
+        setTimeout(() => inputRef.current?.focus(), 50)
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
+
+  useEffect(() => {
+    if (open) setTimeout(() => inputRef.current?.focus(), 50)
+  }, [open])
+
+  if (!open) {
+    return (
+      <button onClick={() => setOpen(true)}
+        className="absolute top-3 left-1/2 -translate-x-1/2 flex items-center gap-2 px-3 py-1.5 text-[11px] text-neutral-600 hover:text-neutral-400 bg-white/[0.04] border border-white/[0.06] rounded-lg backdrop-blur-sm transition-colors z-10"
+        title="Search (⌘K)">
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.3">
+          <circle cx="5" cy="5" r="3.5" /><path d="M7.5 7.5L10.5 10.5" />
+        </svg>
+        <span>search</span>
+        <span className="text-[9px] text-neutral-700 ml-1">⌘K</span>
+      </button>
+    )
+  }
+
+  return (
+    <div className="absolute top-3 left-1/2 -translate-x-1/2 w-80 z-20">
+      <div className="bg-[#0a0a0a]/95 border border-white/[0.1] rounded-xl backdrop-blur-sm shadow-2xl overflow-hidden">
+        {/* Input */}
+        <div className="flex items-center gap-2 px-3 py-2 border-b border-white/[0.06]">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.3" className="text-neutral-500 shrink-0">
+            <circle cx="5" cy="5" r="3.5" /><path d="M7.5 7.5L10.5 10.5" />
+          </svg>
+          <input
+            ref={inputRef}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="search nodes..."
+            className="flex-1 bg-transparent text-[12px] text-white/80 placeholder-neutral-600 focus:outline-none"
+          />
+          <button onClick={() => { setOpen(false); setQuery(''); setTypeFilter(null) }}
+            className="text-neutral-600 hover:text-neutral-400">
+            <svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M1 1l6 6M7 1l-6 6" /></svg>
+          </button>
+        </div>
+
+        {/* Type filters */}
+        <div className="flex gap-1 px-3 py-1.5 border-b border-white/[0.04]">
+          <button
+            onClick={() => setTypeFilter(null)}
+            className={`px-2 py-0.5 text-[9px] rounded-full transition-colors ${!typeFilter ? 'text-white/70 bg-white/[0.08]' : 'text-neutral-600 hover:text-neutral-400'}`}
+          >all</button>
+          {types.map(t => (
+            <button key={t} onClick={() => setTypeFilter(typeFilter === t ? null : t)}
+              className={`px-2 py-0.5 text-[9px] rounded-full transition-colors ${typeFilter === t ? 'bg-white/[0.08]' : 'hover:text-neutral-400'}`}
+              style={{ color: typeFilter === t ? TYPE_COLORS[t] : undefined }}>
+              {t}
+            </button>
+          ))}
+        </div>
+
+        {/* Results */}
+        {(query || typeFilter) && (
+          <div className="max-h-64 overflow-y-auto">
+            {results.length === 0 ? (
+              <p className="px-3 py-4 text-[11px] text-neutral-600 text-center">no matches</p>
+            ) : (
+              results.map((node, i) => {
+                const rank = nodeRadii.get(node.id) || 3
+                return (
+                  <button key={node.id} onClick={() => selectResult(node.id)}
+                    onMouseEnter={() => setSelectedIdx(i)}
+                    className={`w-full text-left flex items-center gap-2 px-3 py-2 transition-colors ${i === selectedIdx ? 'bg-white/[0.06]' : 'hover:bg-white/[0.03]'}`}>
+                    <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: TYPE_COLORS[node.type] || TYPE_COLORS.raw }} />
+                    <span className="text-[11px] text-white/70 truncate flex-1 min-w-0">{node.content}</span>
+                    <span className="text-[9px] text-neutral-700 shrink-0" style={{ color: TYPE_COLORS[node.type] }}>{node.type}</span>
+                    <span className="text-[9px] text-neutral-700 shrink-0 w-4 text-right">{rank.toFixed(0)}</span>
+                  </button>
+                )
+              })
+            )}
+          </div>
+        )}
+
+        {/* Empty state — show top nodes when no query */}
+        {!query && !typeFilter && (
+          <div className="px-3 py-3 text-center">
+            <p className="text-[10px] text-neutral-600">type to search or pick a type filter</p>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function GraphLegend() {
   const [open, setOpen] = useState(false)
   const [expanded, setExpanded] = useState<string | null>(null)
