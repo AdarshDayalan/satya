@@ -609,11 +609,11 @@ export default function KnowledgeGraph({
   }
 
   return (
-    <div className={`relative ${fullscreen ? 'h-full' : ''}`}>
+    <div className={`relative ${fullscreen ? 'h-full' : 'flex-1'}`}>
       <canvas
         ref={canvasRef}
-        className={`w-full bg-[#050505] cursor-grab ${fullscreen ? 'rounded-none border-0' : 'rounded-2xl border border-white/[0.04]'}`}
-        style={{ height: fullscreen ? '100%' : '70vh' }}
+        className={`w-full bg-[#050505] cursor-grab ${fullscreen ? 'rounded-none border-0 h-full' : 'rounded-2xl border border-white/[0.04]'}`}
+        style={fullscreen ? { height: '100%' } : { height: 'calc(100vh - 160px)' }}
       />
 
       {/* Hint */}
