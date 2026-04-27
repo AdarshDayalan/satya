@@ -82,9 +82,12 @@ export default function KnowledgeGraph({
   const time = useRef(0)
   const router = useRouter()
 
-  // Keep onNodeClick in a ref so the event listener closure always has the latest
+  // Keep callbacks in refs so event listener closures always have the latest
   const onNodeClickRef = useRef(onNodeClick)
   onNodeClickRef.current = onNodeClick
+
+
+
 
   // Interaction state
   const hoveredNode = useRef<GraphNode | null>(null)
@@ -107,6 +110,93 @@ export default function KnowledgeGraph({
   const [connSaving, setConnSaving] = useState(false)
   const [connDetecting, setConnDetecting] = useState(false)
 
+  // Compute EvidenceRank early — needed by visibility filter
+  const nodeRadii = useMemo(() => {
+    const ranks = computeEvidenceRank(nodes, edges, undefined, 4, 0.15)
+    return weightToRadius(ranks, 3, 22)
+  }, [nodes, edges])
+
+  // Hierarchical expansion — show concepts first, expand on click
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
+
+  // Determine which nodes are visible
+  const visibleNodeIds = useMemo(() => {
+    const visible = new Set<string>()
+
+    // Build adjacency map
+    const adj = new Map<string, Array<{ id: string; rel: string }>>()
+    for (const e of edges) {
+      if (!adj.has(e.from_node_id)) adj.set(e.from_node_id, [])
+      if (!adj.has(e.to_node_id)) adj.set(e.to_node_id, [])
+      adj.get(e.from_node_id)!.push({ id: e.to_node_id, rel: e.relationship })
+      adj.get(e.to_node_id)!.push({ id: e.from_node_id, rel: e.relationship })
+    }
+
+    // Always show concept nodes (top-level beliefs)
+    for (const n of nodes) {
+      if (n.type === 'concept') visible.add(n.id)
+    }
+
+    // Show orphan nodes (no edges) — they float alone
+    for (const n of nodes) {
+      if (!adj.has(n.id) || adj.get(n.id)!.length === 0) visible.add(n.id)
+    }
+
+    // If fewer than 5 concepts, show top nodes by EvidenceRank
+    if (visible.size < 5) {
+      const ranked = [...nodes]
+        .sort((a, b) => (nodeRadii.get(b.id) || 0) - (nodeRadii.get(a.id) || 0))
+        .slice(0, Math.max(8, nodes.length > 20 ? 12 : nodes.length))
+      for (const n of ranked) visible.add(n.id)
+    }
+
+    // Show children of expanded nodes
+    for (const expandedId of expandedIds) {
+      visible.add(expandedId)
+      const neighbors = adj.get(expandedId) || []
+      for (const neighbor of neighbors) {
+        visible.add(neighbor.id)
+      }
+    }
+
+    return visible
+  }, [nodes, edges, expandedIds, nodeRadii])
+
+  // Filter to visible
+  const visibleNodes = useMemo(() => nodes.filter(n => visibleNodeIds.has(n.id)), [nodes, visibleNodeIds])
+  const visibleEdges = useMemo(() => edges.filter(e => visibleNodeIds.has(e.from_node_id) && visibleNodeIds.has(e.to_node_id)), [edges, visibleNodeIds])
+
+  // Count hidden children per node (for expand indicator)
+  const hiddenChildCount = useMemo(() => {
+    const counts = new Map<string, number>()
+    const adj = new Map<string, string[]>()
+    for (const e of edges) {
+      if (!adj.has(e.from_node_id)) adj.set(e.from_node_id, [])
+      if (!adj.has(e.to_node_id)) adj.set(e.to_node_id, [])
+      adj.get(e.from_node_id)!.push(e.to_node_id)
+      adj.get(e.to_node_id)!.push(e.from_node_id)
+    }
+    for (const n of visibleNodes) {
+      const neighbors = adj.get(n.id) || []
+      const hidden = neighbors.filter(id => !visibleNodeIds.has(id)).length
+      if (hidden > 0) counts.set(n.id, hidden)
+    }
+    return counts
+  }, [visibleNodes, edges, visibleNodeIds])
+
+  // Refs for event listener closures
+  const hiddenChildCountRef = useRef(hiddenChildCount)
+  hiddenChildCountRef.current = hiddenChildCount
+
+  const toggleExpandRef = useRef((nodeId: string) => {
+    setExpandedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(nodeId)) next.delete(nodeId)
+      else next.add(nodeId)
+      return next
+    })
+  })
+
   // Build folder membership map
   const folderMap = useRef<Map<string, string[]>>(new Map())
 
@@ -119,11 +209,7 @@ export default function KnowledgeGraph({
     folderMap.current = fm
   }, [folderNodes])
 
-  // Compute EvidenceRank — recursive importance based on evidence flow + source credibility
-  const nodeRadii = useMemo(() => {
-    const ranks = computeEvidenceRank(nodes, edges, undefined, 4, 0.15)
-    return weightToRadius(ranks, 3, 22)
-  }, [nodes, edges])
+
 
   const init = useCallback(() => {
     const canvas = canvasRef.current
@@ -133,8 +219,14 @@ export default function KnowledgeGraph({
     canvas.width = w * 2
     canvas.height = h * 2
 
-    graphNodes.current = nodes.map((n, i) => {
-      const angle = (i / nodes.length) * Math.PI * 2
+    // Preserve positions for nodes that are already placed
+    const existing = new Map(graphNodes.current.map(n => [n.id, n]))
+
+    graphNodes.current = visibleNodes.map((n, i) => {
+      const prev = existing.get(n.id)
+      if (prev) return { ...prev, ...n, radius: nodeRadii.get(n.id) || 4 }
+
+      const angle = (i / visibleNodes.length) * Math.PI * 2
       const r = Math.min(w, h) * 0.3
       return {
         ...n,
@@ -146,7 +238,7 @@ export default function KnowledgeGraph({
         radius: nodeRadii.get(n.id) || 4,
       }
     })
-  }, [nodes, nodeRadii])
+  }, [visibleNodes, nodeRadii])
 
   // Find cluster centers for folder labels
   const getClusterCenters = useCallback(() => {
@@ -199,15 +291,15 @@ export default function KnowledgeGraph({
       for (let i = 0; i < gn.length; i++) {
         const a = gn[i]
         if (a === dragging) continue
-        a.vx! += (w / 2 / zoom.current - pan.current.x / zoom.current - a.x!) * 0.0003
-        a.vy! += (h / 2 / zoom.current - pan.current.y / zoom.current - a.y!) * 0.0003
+        a.vx! += (w / 2 / zoom.current - pan.current.x / zoom.current - a.x!) * 0.0001
+        a.vy! += (h / 2 / zoom.current - pan.current.y / zoom.current - a.y!) * 0.0001
         for (let j = i + 1; j < gn.length; j++) {
           const b = gn[j]
           if (b === dragging) continue
           const dx = a.x! - b.x!
           const dy = a.y! - b.y!
           const dist = Math.sqrt(dx * dx + dy * dy) || 1
-          const force = 1000 / (dist * dist)
+          const force = 3000 / (dist * dist)
           a.vx! += (dx / dist) * force
           a.vy! += (dy / dist) * force
           b.vx! -= (dx / dist) * force
@@ -215,15 +307,15 @@ export default function KnowledgeGraph({
         }
       }
 
-      for (const edge of edges) {
+      for (const edge of visibleEdges) {
         const a = nodeMap.get(edge.from_node_id)
         const b = nodeMap.get(edge.to_node_id)
         if (!a || !b || a === dragging || b === dragging) continue
         const dx = b.x! - a.x!
         const dy = b.y! - a.y!
         const dist = Math.sqrt(dx * dx + dy * dy) || 1
-        const idealDist = edge.relationship === 'contradicts' ? 180 : 90
-        const force = (dist - idealDist) * 0.003 * edge.strength
+        const idealDist = edge.relationship === 'contradicts' ? 300 : 150
+        const force = (dist - idealDist) * 0.002 * edge.strength
         a.vx! += (dx / dist) * force
         a.vy! += (dy / dist) * force
         b.vx! -= (dx / dist) * force
@@ -266,16 +358,15 @@ export default function KnowledgeGraph({
       }
 
       // --- Draw edges ---
-      for (const edge of edges) {
+      for (const edge of visibleEdges) {
         const a = nodeMap.get(edge.from_node_id)
         const b = nodeMap.get(edge.to_node_id)
         if (!a || !b) continue
         const color = REL_COLORS[edge.relationship] || REL_COLORS.related
         const isContradiction = edge.relationship === 'contradicts'
         const isHighlighted = hovered && (hovered.id === edge.from_node_id || hovered.id === edge.to_node_id)
-        const baseAlpha = isHighlighted ? 0.6 : 0.08 + edge.strength * 0.25
-        const pulse = Math.sin(time.current * 2 + edge.strength * 10) * 0.05
-        ctx.globalAlpha = baseAlpha + pulse
+        const baseAlpha = isHighlighted ? 0.5 : 0.03
+        ctx.globalAlpha = baseAlpha
         ctx.beginPath()
         ctx.strokeStyle = color
         ctx.lineWidth = (0.5 + edge.strength * 2) * (isHighlighted ? 1.5 : 1)
@@ -291,14 +382,14 @@ export default function KnowledgeGraph({
         }
         ctx.stroke()
         ctx.setLineDash([])
-        if (!isContradiction) {
+        if (!isContradiction && isHighlighted) {
           const t = (time.current * 0.4 + edge.strength) % 1
           const px = a.x! + (b.x! - a.x!) * t
           const py = a.y! + (b.y! - a.y!) * t
           ctx.beginPath()
-          ctx.arc(px, py, 1.2, 0, Math.PI * 2)
+          ctx.arc(px, py, 1.5, 0, Math.PI * 2)
           ctx.fillStyle = color
-          ctx.globalAlpha = isHighlighted ? 0.8 : 0.3
+          ctx.globalAlpha = 0.7
           ctx.fill()
         }
       }
@@ -365,18 +456,34 @@ export default function KnowledgeGraph({
           ctx.stroke()
         }
 
-        // Label — scale font with zoom, hide at low zoom to avoid clutter
-        const effectiveZoom = zoom.current
-        if (isHovered || effectiveZoom > 0.5) {
-          ctx.fillStyle = isHovered ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.4)'
-          const fontSize = isHovered ? 11 : Math.max(7, 9 / Math.max(effectiveZoom, 0.6))
+        // Label — only show on hover or big nodes (high EvidenceRank)
+        const isBigNode = r >= 10
+        if (isHovered || isBigNode) {
+          ctx.fillStyle = isHovered ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.3)'
+          const fontSize = isHovered ? 11 : 8
           ctx.font = `${fontSize}px system-ui`
           ctx.textAlign = 'center'
-          ctx.globalAlpha = isHovered ? 1 : Math.min(0.6, effectiveZoom * 0.6)
-          const maxLen = isHovered ? 40 : 18
+          ctx.globalAlpha = isHovered ? 1 : 0.4
+          const maxLen = isHovered ? 50 : 22
           const label = n.content.length > maxLen ? n.content.slice(0, maxLen) + '…' : n.content
           ctx.fillText(label, n.x!, n.y! + r + 12)
         }
+        // Expand indicator — show "+N" badge if node has hidden children
+        const hiddenCount = hiddenChildCount.get(n.id)
+        if (hiddenCount && hiddenCount > 0) {
+          const badgeX = n.x! + r + 2
+          const badgeY = n.y! - r - 2
+          ctx.globalAlpha = isHovered ? 0.9 : 0.5
+          ctx.fillStyle = '#a78bfa'
+          ctx.beginPath()
+          ctx.arc(badgeX, badgeY, 6, 0, Math.PI * 2)
+          ctx.fill()
+          ctx.fillStyle = '#050505'
+          ctx.font = 'bold 7px system-ui'
+          ctx.textAlign = 'center'
+          ctx.fillText(`${hiddenCount}`, badgeX, badgeY + 2.5)
+        }
+
         ctx.globalAlpha = 1
       }
 
@@ -398,7 +505,7 @@ export default function KnowledgeGraph({
 
     animate()
     return () => cancelAnimationFrame(animRef.current)
-  }, [init, edges, getClusterCenters])
+  }, [init, visibleEdges, getClusterCenters, hiddenChildCount])
 
   // Mouse handlers
   useEffect(() => {
@@ -521,7 +628,11 @@ export default function KnowledgeGraph({
           const dx = Math.abs((mouse.current.x - pan.current.x) / zoom.current - node.x!)
           const dy = Math.abs((mouse.current.y - pan.current.y) / zoom.current - node.y!)
           if (dx < 2 && dy < 2) {
-            if (onNodeClickRef.current) {
+            // If node has hidden children, expand it
+            const hidden = hiddenChildCountRef.current.get(node.id)
+            if (hidden && hidden > 0) {
+              toggleExpandRef.current(node.id)
+            } else if (onNodeClickRef.current) {
               onNodeClickRef.current(node.id)
             } else {
               router.push(`/nodes/${node.id}`)

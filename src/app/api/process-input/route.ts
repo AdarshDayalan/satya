@@ -158,17 +158,21 @@ export async function POST(req: Request) {
       createdNodes.push(savedNode)
 
       // Step 4: Find similar nodes and detect relationships
-      let candidates: Array<{ id: string; content: string }> = []
+      // Use pgvector ANN search (O(log n)) + similarity threshold to pre-filter
+      let candidates: Array<{ id: string; content: string; similarity?: number }> = []
 
       if (embedding) {
         const { data: nearbyNodes } = await supabase.rpc('match_nodes', {
           query_embedding: JSON.stringify(embedding),
           match_user_id: user.id,
-          match_count: 5,
+          match_count: 8,
         })
-        candidates = (nearbyNodes ?? []).filter(
-          (n: { id: string }) => n.id !== savedNode.id
-        )
+        // Pre-filter: only keep nodes with similarity > 0.3 (skip weak matches before AI call)
+        candidates = (nearbyNodes ?? [])
+          .filter((n: { id: string; similarity: number }) =>
+            n.id !== savedNode.id && n.similarity > 0.3
+          )
+          .slice(0, 5) // Cap at 5 to limit AI calls
       }
 
       // Fallback: use sibling nodes from this batch if no embedding matches
