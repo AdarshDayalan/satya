@@ -4,6 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import ProcessingQueue from './ProcessingQueue'
 import SpacesPanel from './SpacesPanel'
+import KnowledgeGraph from './KnowledgeGraph'
 
 type NavKey = 'home' | 'graph' | 'files' | 'publish'
 
@@ -11,48 +12,56 @@ interface AppShellProps {
   children: React.ReactNode
   filesPanel: React.ReactNode
   headerActions?: React.ReactNode
+  graphData?: {
+    nodes: Array<{ id: string; content: string; type: string; weight?: number; created_at: string }>
+    edges: Array<{ from_node_id: string; to_node_id: string; relationship: string; strength: number }>
+    folders: Array<{ id: string; name: string }>
+    folderNodes: Array<{ folder_id: string; node_id: string }>
+  }
 }
 
-export default function AppShell({ children, filesPanel, headerActions }: AppShellProps) {
-  const [filesPanelOpen, setFilesPanelOpen] = useState(true)
+export default function AppShell({ children, filesPanel, headerActions, graphData }: AppShellProps) {
   const [activeNav, setActiveNav] = useState<NavKey>('home')
-  const [showSpaces, setShowSpaces] = useState(false)
+  const [sidePanel, setSidePanel] = useState<'files' | 'spaces' | 'graph' | null>(null)
 
   function handleNav(key: NavKey) {
+    if (key === 'home') {
+      setSidePanel(null)
+      setActiveNav('home')
+      return
+    }
     if (key === 'files') {
-      setFilesPanelOpen(!filesPanelOpen)
-      setShowSpaces(false)
+      setSidePanel(sidePanel === 'files' ? null : 'files')
       setActiveNav('files')
       return
     }
+    if (key === 'graph') {
+      setSidePanel(sidePanel === 'graph' ? null : 'graph')
+      setActiveNav('graph')
+      return
+    }
     if (key === 'publish') {
-      setShowSpaces(!showSpaces)
-      setFilesPanelOpen(false)
+      setSidePanel(sidePanel === 'spaces' ? null : 'spaces')
       setActiveNav('publish')
       return
     }
-    setShowSpaces(false)
-    setActiveNav(key)
-    if (key === 'home') { setFilesPanelOpen(true) }
   }
 
   return (
     <div className="h-screen bg-[#050505] text-white flex flex-col overflow-hidden">
-      {/* Ambient glow */}
       <div className="fixed top-0 left-1/2 -translate-x-1/2 w-[800px] h-[400px] rounded-full bg-white/[0.01] blur-3xl pointer-events-none" />
 
       <div className="flex flex-1 overflow-hidden relative z-10">
         {/* Icon rail */}
         <nav className="w-11 shrink-0 bg-[#080808] border-r border-white/[0.04] flex flex-col items-center justify-between py-2.5">
           <div className="space-y-0.5">
-            {/* Logo */}
             <Link href="/home" className="w-8 h-8 flex items-center justify-center mb-3">
               <span className="text-[13px] font-light text-white/80 tracking-tight">S</span>
             </Link>
 
             <NavButton
-              active={activeNav === 'home' && !filesPanelOpen}
-              onClick={() => { setFilesPanelOpen(false); setActiveNav('home') }}
+              active={activeNav === 'home' && sidePanel === null}
+              onClick={() => handleNav('home')}
               title="Home"
             >
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2">
@@ -62,7 +71,7 @@ export default function AppShell({ children, filesPanel, headerActions }: AppShe
             </NavButton>
 
             <NavButton
-              active={activeNav === 'graph'}
+              active={sidePanel === 'graph'}
               onClick={() => handleNav('graph')}
               title="Graph"
             >
@@ -75,7 +84,7 @@ export default function AppShell({ children, filesPanel, headerActions }: AppShe
             </NavButton>
 
             <NavButton
-              active={activeNav === 'files'}
+              active={sidePanel === 'files'}
               onClick={() => handleNav('files')}
               title="Files"
             >
@@ -86,9 +95,9 @@ export default function AppShell({ children, filesPanel, headerActions }: AppShe
             </NavButton>
 
             <NavButton
-              active={activeNav === 'publish'}
+              active={sidePanel === 'spaces'}
               onClick={() => handleNav('publish')}
-              title="Published"
+              title="Spaces"
             >
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2">
                 <circle cx="8" cy="8" r="6" />
@@ -114,22 +123,32 @@ export default function AppShell({ children, filesPanel, headerActions }: AppShe
           </div>
         </nav>
 
-        {/* Files panel */}
-        {filesPanelOpen && (
+        {/* Side panels — only one at a time */}
+        {sidePanel === 'files' && (
           <div className="w-56 shrink-0 border-r border-white/[0.04] bg-[#080808] overflow-y-auto">
             <ProcessingQueue />
             {filesPanel}
           </div>
         )}
 
-        {/* Spaces panel */}
-        {showSpaces && (
+        {sidePanel === 'graph' && graphData && (
+          <div className="w-[400px] shrink-0 border-r border-white/[0.04] bg-[#050505] overflow-hidden">
+            <KnowledgeGraph
+              nodes={graphData.nodes}
+              edges={graphData.edges}
+              folders={graphData.folders}
+              folderNodes={graphData.folderNodes}
+            />
+          </div>
+        )}
+
+        {sidePanel === 'spaces' && (
           <div className="w-72 shrink-0 border-r border-white/[0.04] bg-[#080808] overflow-y-auto">
             <SpacesPanel />
           </div>
         )}
 
-        {/* Main content + detail panel */}
+        {/* Main content */}
         <div className="flex-1 overflow-y-auto">
           {children}
         </div>

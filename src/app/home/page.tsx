@@ -2,7 +2,6 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import InputBox from '@/components/InputBox'
 import SourceSidebar from '@/components/SourceSidebar'
-import HomeTabs from '@/components/HomeTabs'
 import HeaderActions from '@/components/HeaderActions'
 import AppShell from '@/components/AppShell'
 import { SelectionProvider } from '@/components/SelectionContext'
@@ -25,6 +24,15 @@ export default async function HomePage() {
     id: n.id, content: n.content, type: n.type,
   }))
 
+  const graphData = {
+    nodes: (nodes ?? []).map((n: { id: string; content: string; type: string; weight?: number; created_at: string }) => ({
+      id: n.id, content: n.content, type: n.type, weight: n.weight, created_at: n.created_at,
+    })),
+    edges: edges ?? [],
+    folders: (folders ?? []).map((f: { id: string; name: string }) => ({ id: f.id, name: f.name })),
+    folderNodes: folderNodesData ?? [],
+  }
+
   return (
     <SelectionProvider allNodes={allNodes}>
       <AppShell
@@ -37,16 +45,12 @@ export default async function HomePage() {
           />
         }
         headerActions={<HeaderActions />}
+        graphData={graphData}
       >
-        <main className="px-10 py-8 space-y-8">
-          <InputBox />
-          <HomeTabs
-            nodes={nodes ?? []}
-            edges={edges ?? []}
-            folders={folders ?? []}
-            folderNodes={folderNodesData ?? []}
-            inputs={inputs ?? []}
-          />
+        <main className="flex items-center justify-center" style={{ minHeight: 'calc(100vh - 2rem)' }}>
+          <div className="w-full max-w-xl px-6 space-y-6">
+            <InputBox />
+          </div>
         </main>
       </AppShell>
     </SelectionProvider>
