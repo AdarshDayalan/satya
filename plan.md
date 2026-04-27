@@ -27,7 +27,7 @@ A responsive web app where users drop text/links/notes/voice, AI extracts meanin
 | Auth           | Supabase Auth                   |
 | Database       | Supabase Postgres               |
 | Vector Search  | pgvector in Supabase            |
-| AI             | OpenAI API                      |
+| AI             | Gemini API (2.0 Flash + text-embedding-004) |
 | Hosting        | Vercel                          |
 | Storage        | Supabase Storage (later)        |
 | Mobile         | Responsive PWA                  |
@@ -59,7 +59,7 @@ A responsive web app where users drop text/links/notes/voice, AI extracts meanin
 | content   | text NOT NULL  | —                 |
 | type      | text           | 'idea'            |
 | summary   | text           | —                 |
-| embedding | vector(1536)   | —                 |
+| embedding | vector(768)    | —                 |
 | created_at| timestamptz    | now()             |
 
 Node types: `raw`, `idea`, `source`, `question`, `synthesis`
@@ -110,7 +110,7 @@ All tables have RLS enabled. Policy: `auth.uid() = user_id` for all ops. `folder
 
 ```sql
 create or replace function match_nodes(
-  query_embedding vector(1536),
+  query_embedding vector(768),
   match_user_id uuid,
   match_count int default 10
 ) returns table (id uuid, content text, type text, similarity float)
@@ -222,31 +222,31 @@ Stored in `/lib/prompts.ts` as exports: `EXTRACT_IDEAS_PROMPT`, `DETECT_RELATION
 ## Build Phases
 
 ### Phase 1: Foundation
-- [ ] Next.js + TypeScript + Tailwind setup
-- [ ] Supabase project + pgvector
-- [ ] All tables + RLS + match_nodes function
-- [ ] Auth (login/signup)
-- [ ] Protected dashboard shell
-- [ ] Deploy to Vercel
+- [x] Next.js + TypeScript + Tailwind setup
+- [x] Supabase project + pgvector
+- [x] All tables + RLS + match_nodes function
+- [x] Auth (login/signup)
+- [x] Protected dashboard shell
+- [x] Deploy to Vercel
 
 ### Phase 2: Input + AI Extraction
-- [ ] InputBox component
-- [ ] `POST /api/process-input` — save raw input
-- [ ] OpenAI client + extractIdeas function
-- [ ] Store extracted nodes
-- [ ] Recent nodes feed in UI
+- [x] InputBox component
+- [x] `POST /api/process-input` — save raw input
+- [x] Gemini client + extractIdeas function
+- [x] Store extracted nodes
+- [x] Recent nodes feed in UI
 
 ### Phase 3: Graph
-- [ ] createEmbedding function
-- [ ] Store embeddings, run match_nodes
-- [ ] detectRelationships prompt + edge storage
-- [ ] Node detail page with connections
+- [x] createEmbedding function (Gemini text-embedding-004, 768d)
+- [x] Store embeddings, run match_nodes
+- [x] detectRelationships prompt + edge storage
+- [x] Node detail page with connections
 
 ### Phase 4: Emergence
-- [ ] Local neighborhood query
-- [ ] suggestFolder prompt
-- [ ] Folder creation + node linking
-- [ ] Folder list on home, folder detail page
+- [x] Local neighborhood query
+- [x] suggestFolder prompt
+- [x] Folder creation + node linking
+- [x] Folder list on home, folder detail page
 
 ### Phase 5: Capture Speed
 - [ ] PWA manifest + app icon

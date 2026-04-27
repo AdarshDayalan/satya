@@ -33,27 +33,33 @@ export default function InputBox() {
   }
 
   return (
-    <div className="space-y-3">
-      <form onSubmit={handleSubmit} className="space-y-3">
-        <textarea
-          value={content}
-          onChange={(e) => setContent(e.target.value)}
-          placeholder="Drop anything here — note, link, thought, quote, transcript..."
-          rows={4}
-          className="w-full px-4 py-3 bg-neutral-900 border border-neutral-800 rounded-lg text-white placeholder-neutral-500 resize-none focus:outline-none focus:ring-2 focus:ring-neutral-600"
-        />
+    <div className="space-y-4">
+      <form onSubmit={handleSubmit} className="relative">
+        <div className="input-glow rounded-2xl">
+          <textarea
+            value={content}
+            onChange={(e) => setContent(e.target.value)}
+            placeholder="drop anything here..."
+            rows={3}
+            className="w-full px-5 py-4 bg-white/[0.03] border border-white/[0.06] rounded-2xl text-white/90 placeholder-neutral-600 resize-none focus:outline-none focus:border-white/[0.12] transition-all text-[15px] leading-relaxed"
+          />
+        </div>
         <button
           type="submit"
           disabled={loading || !content.trim()}
-          className="w-full py-3 bg-white text-black font-medium rounded-lg hover:bg-neutral-200 transition disabled:opacity-50"
+          className="absolute bottom-3 right-3 px-4 py-1.5 text-xs font-medium text-white/60 bg-white/[0.06] rounded-lg hover:bg-white/[0.1] hover:text-white/90 border border-white/[0.06] transition-all disabled:opacity-20 disabled:cursor-default"
         >
-          {loading ? 'Processing...' : 'Process'}
+          {loading ? (
+            <span className="animate-pulse-soft">processing</span>
+          ) : (
+            'process'
+          )}
         </button>
       </form>
 
       {result && (
-        <div className="text-sm text-neutral-400 bg-neutral-900 rounded-lg px-4 py-3">
-          Meaning extracted — {result.nodes} nodes created, {result.edges} connections found.
+        <div className="animate-fade-up text-[13px] text-neutral-500 px-1">
+          {result.nodes} meaning nodes extracted · {result.edges} connections found
         </div>
       )}
     </div>

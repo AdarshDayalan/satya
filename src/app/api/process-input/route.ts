@@ -1,11 +1,33 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getModel, generateEmbedding } from '@/lib/gemini'
-import { EXTRACT_IDEAS_PROMPT, DETECT_RELATIONSHIPS_PROMPT } from '@/lib/prompts'
+import {
+  EXTRACT_IDEAS_PROMPT,
+  DETECT_RELATIONSHIPS_PROMPT,
+  SUGGEST_FOLDER_PROMPT,
+} from '@/lib/prompts'
+
+async function parseJsonWithRetry(
+  model: ReturnType<typeof getModel>,
+  prompt: string
+): Promise<Record<string, unknown>> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const result = await model.generateContent(prompt)
+      const text = result.response.text()
+      return JSON.parse(text)
+    } catch {
+      if (attempt === 1) throw new Error('JSON parse failed after retry')
+    }
+  }
+  throw new Error('unreachable')
+}
 
 export async function POST(req: Request) {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
 
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -13,7 +35,7 @@ export async function POST(req: Request) {
 
   const { raw_content, source_url, input_type } = await req.json()
 
-  // Step 1: Save raw input
+  // Step 1: Save raw input (never lost)
   const { data: input, error: inputError } = await supabase
     .from('inputs')
     .insert({
@@ -31,19 +53,24 @@ export async function POST(req: Request) {
   }
 
   try {
-    // Step 2: Extract meaning nodes
     const model = getModel()
+
+    // Step 2: Extract meaning nodes (with retry)
     const prompt = EXTRACT_IDEAS_PROMPT.replace('{{raw_content}}', raw_content)
-    const extractResult = await model.generateContent(prompt)
-    const extractText = extractResult.response.text()
-    const extracted = JSON.parse(extractText)
+    const extracted = (await parseJsonWithRetry(model, prompt)) as {
+      summary: string
+      nodes: Array<{ content: string; type: string }>
+    }
 
     // Step 3: Create nodes with embeddings and find relationships
     const createdNodes: Array<{ id: string; content: string; type: string }> = []
-    const createdEdges: Array<{ from_node_id: string; to_node_id: string; relationship: string }> = []
+    const createdEdges: Array<{
+      from_node_id: string
+      to_node_id: string
+      relationship: string
+    }> = []
 
     for (const node of extracted.nodes) {
-      // Generate embedding
       let embedding: number[] | null = null
       try {
         embedding = await generateEmbedding(node.content)
@@ -51,7 +78,6 @@ export async function POST(req: Request) {
         // Continue without embedding
       }
 
-      // Save node
       const { data: savedNode } = await supabase
         .from('nodes')
         .insert({
@@ -76,20 +102,25 @@ export async function POST(req: Request) {
           match_count: 5,
         })
 
-        // Exclude nodes from same input
         const candidates = (nearbyNodes ?? []).filter(
           (n: { id: string }) => !createdNodes.some((c) => c.id === n.id)
         )
 
         if (candidates.length > 0) {
-          const relPrompt = DETECT_RELATIONSHIPS_PROMPT
-            .replace('{{new_node}}', JSON.stringify({ id: savedNode.id, content: savedNode.content }))
-            .replace('{{nearby_nodes}}', JSON.stringify(candidates))
-
           try {
-            const relResult = await model.generateContent(relPrompt)
-            const relText = relResult.response.text()
-            const parsed = JSON.parse(relText)
+            const relPrompt = DETECT_RELATIONSHIPS_PROMPT.replace(
+              '{{new_node}}',
+              JSON.stringify({ id: savedNode.id, content: savedNode.content })
+            ).replace('{{nearby_nodes}}', JSON.stringify(candidates))
+
+            const parsed = (await parseJsonWithRetry(model, relPrompt)) as {
+              relationships: Array<{
+                existing_node_id: string
+                relationship: string
+                strength: number
+                reason: string
+              }>
+            }
 
             for (const rel of parsed.relationships) {
               if (rel.relationship === 'none' || rel.strength < 0.55) continue
@@ -110,13 +141,90 @@ export async function POST(req: Request) {
               if (edge) createdEdges.push(edge)
             }
           } catch {
-            // Relationship detection failed — nodes are still saved
+            // Relationship detection failed — nodes still saved
           }
         }
       }
     }
 
-    // Mark input as processed
+    // Step 5: Suggest emergent folder
+    let folderSuggestion = null
+    if (createdEdges.length > 0) {
+      try {
+        // Gather local neighborhood: created nodes + connected nodes
+        const connectedNodeIds = new Set<string>()
+        for (const edge of createdEdges) {
+          connectedNodeIds.add(edge.to_node_id)
+        }
+        for (const node of createdNodes) {
+          connectedNodeIds.add(node.id)
+        }
+
+        // Get second-degree connections for strong edges
+        const { data: secondDegree } = await supabase
+          .from('edges')
+          .select('from_node_id, to_node_id')
+          .or(
+            [...connectedNodeIds]
+              .map((id) => `from_node_id.eq.${id},to_node_id.eq.${id}`)
+              .join(',')
+          )
+          .gte('strength', 0.7)
+
+        for (const e of secondDegree ?? []) {
+          connectedNodeIds.add(e.from_node_id)
+          connectedNodeIds.add(e.to_node_id)
+        }
+
+        // Only suggest if cluster is large enough
+        if (connectedNodeIds.size >= 5) {
+          const { data: clusterNodes } = await supabase
+            .from('nodes')
+            .select('id, content, type')
+            .in('id', [...connectedNodeIds])
+
+          const folderPrompt = SUGGEST_FOLDER_PROMPT.replace(
+            '{{cluster_nodes}}',
+            JSON.stringify(clusterNodes)
+          )
+
+          const folderResult = (await parseJsonWithRetry(model, folderPrompt)) as {
+            should_create_folder: boolean
+            folder_name: string
+            description: string
+            confidence: number
+          }
+
+          if (folderResult.should_create_folder && folderResult.confidence >= 0.75) {
+            const { data: folder } = await supabase
+              .from('folders')
+              .insert({
+                user_id: user.id,
+                name: folderResult.folder_name,
+                description: folderResult.description,
+                confidence: folderResult.confidence,
+                created_by: 'ai',
+              })
+              .select()
+              .single()
+
+            if (folder) {
+              const folderNodeRows = [...connectedNodeIds].map((nodeId) => ({
+                folder_id: folder.id,
+                node_id: nodeId,
+                added_by: 'ai',
+              }))
+
+              await supabase.from('folder_nodes').insert(folderNodeRows)
+              folderSuggestion = folder
+            }
+          }
+        }
+      } catch {
+        // Folder suggestion failed — not critical
+      }
+    }
+
     await supabase
       .from('inputs')
       .update({ status: 'processed', processed_at: new Date().toISOString() })
@@ -126,9 +234,9 @@ export async function POST(req: Request) {
       input,
       nodes: createdNodes,
       edges: createdEdges,
+      folder: folderSuggestion,
     })
   } catch {
-    // AI failed — mark input as failed but don't lose it
     await supabase
       .from('inputs')
       .update({ status: 'failed' })

@@ -32,17 +32,20 @@ export default function SignupPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-neutral-950 px-4">
-      <div className="w-full max-w-sm space-y-8">
-        <div className="text-center">
-          <h1 className="text-3xl font-bold text-white tracking-tight">Satya</h1>
-          <p className="mt-2 text-neutral-400 text-sm">Begin your truth graph</p>
+    <div className="min-h-screen flex items-center justify-center bg-[#050505] px-4 relative overflow-hidden">
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] rounded-full bg-white/[0.015] blur-3xl pointer-events-none" />
+
+      <div className="w-full max-w-sm space-y-10 relative z-10 animate-fade-up">
+        <div className="text-center space-y-3">
+          <h1 className="text-4xl font-light text-white tracking-tight">Satya</h1>
+          <p className="text-neutral-500 text-sm tracking-wide">begin your truth graph</p>
         </div>
 
         {success ? (
-          <p className="text-center text-green-400 text-sm">
-            Check your email for a confirmation link.
-          </p>
+          <div className="text-center space-y-2 animate-fade-up">
+            <p className="text-neutral-300 text-sm">Check your email for a confirmation link.</p>
+            <p className="text-neutral-600 text-xs">Then return here to enter.</p>
+          </div>
         ) : (
           <form onSubmit={handleSignup} className="space-y-4">
             <input
@@ -51,7 +54,7 @@ export default function SignupPage() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
-              className="w-full px-4 py-3 bg-neutral-900 border border-neutral-800 rounded-lg text-white placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-600"
+              className="w-full px-4 py-3.5 bg-white/[0.04] border border-white/[0.06] rounded-xl text-white placeholder-neutral-600 focus:outline-none focus:border-white/[0.15] transition-colors"
             />
             <input
               type="password"
@@ -60,25 +63,25 @@ export default function SignupPage() {
               onChange={(e) => setPassword(e.target.value)}
               required
               minLength={6}
-              className="w-full px-4 py-3 bg-neutral-900 border border-neutral-800 rounded-lg text-white placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-600"
+              className="w-full px-4 py-3.5 bg-white/[0.04] border border-white/[0.06] rounded-xl text-white placeholder-neutral-600 focus:outline-none focus:border-white/[0.15] transition-colors"
             />
 
-            {error && <p className="text-red-400 text-sm">{error}</p>}
+            {error && <p className="text-red-400/80 text-sm">{error}</p>}
 
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-3 bg-white text-black font-medium rounded-lg hover:bg-neutral-200 transition disabled:opacity-50"
+              className="w-full py-3.5 bg-white/[0.08] text-white/90 font-medium rounded-xl hover:bg-white/[0.12] border border-white/[0.06] transition-all disabled:opacity-30"
             >
-              {loading ? 'Creating account...' : 'Sign up'}
+              {loading ? 'Creating...' : 'Create space'}
             </button>
           </form>
         )}
 
-        <p className="text-center text-neutral-500 text-sm">
-          Already have an account?{' '}
-          <Link href="/login" className="text-white hover:underline">
-            Sign in
+        <p className="text-center text-neutral-600 text-sm">
+          Already have a space?{' '}
+          <Link href="/login" className="text-neutral-400 hover:text-white transition-colors">
+            Enter
           </Link>
         </p>
       </div>

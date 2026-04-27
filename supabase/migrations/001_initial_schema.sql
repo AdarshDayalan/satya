@@ -21,7 +21,7 @@ create table nodes (
   content text not null,
   type text default 'idea',
   summary text,
-  embedding vector(1536),
+  embedding vector(768),
   created_at timestamptz default now()
 );
 
@@ -74,7 +74,7 @@ create policy "Users manage own folder_nodes" on folder_nodes for all
 
 -- Vector similarity search
 create or replace function match_nodes(
-  query_embedding vector(1536),
+  query_embedding vector(768),
   match_user_id uuid,
   match_count int default 10
 )

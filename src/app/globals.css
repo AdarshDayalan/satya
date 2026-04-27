@@ -1,11 +1,85 @@
 @import "tailwindcss";
 
 :root {
-  --background: #0a0a0a;
-  --foreground: #ededed;
+  --background: #050505;
+  --foreground: #e0e0e0;
+  --glow: rgba(255, 255, 255, 0.03);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
+}
+
+/* Subtle ambient glow behind input */
+.input-glow {
+  box-shadow: 0 0 80px rgba(120, 120, 180, 0.06), 0 0 20px rgba(120, 120, 180, 0.03);
+}
+
+/* Node card hover glow */
+.node-card {
+  transition: all 0.3s ease;
+}
+.node-card:hover {
+  box-shadow: 0 0 30px rgba(150, 150, 220, 0.08);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+/* Pulse animation for processing */
+@keyframes pulse-soft {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+.animate-pulse-soft {
+  animation: pulse-soft 2s ease-in-out infinite;
+}
+
+/* Fade in for new elements */
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-fade-up {
+  animation: fade-up 0.4s ease-out forwards;
+}
+
+/* Staggered children animation */
+.stagger-children > * {
+  opacity: 0;
+  animation: fade-up 0.4s ease-out forwards;
+}
+.stagger-children > *:nth-child(1) { animation-delay: 0ms; }
+.stagger-children > *:nth-child(2) { animation-delay: 60ms; }
+.stagger-children > *:nth-child(3) { animation-delay: 120ms; }
+.stagger-children > *:nth-child(4) { animation-delay: 180ms; }
+.stagger-children > *:nth-child(5) { animation-delay: 240ms; }
+.stagger-children > *:nth-child(6) { animation-delay: 300ms; }
+.stagger-children > *:nth-child(7) { animation-delay: 360ms; }
+.stagger-children > *:nth-child(8) { animation-delay: 420ms; }
+.stagger-children > *:nth-child(9) { animation-delay: 480ms; }
+.stagger-children > *:nth-child(10) { animation-delay: 540ms; }
+
+/* Relationship type colors */
+.rel-supports { color: #6ee7b7; }
+.rel-contradicts { color: #fca5a5; }
+.rel-refines { color: #93c5fd; }
+.rel-similar { color: #d4d4d8; }
+.rel-causes { color: #fcd34d; }
+.rel-example_of { color: #c4b5fd; }
+.rel-related { color: #9ca3af; }
+
+/* Folder theme card */
+.theme-card {
+  background: linear-gradient(135deg, rgba(120, 120, 180, 0.06) 0%, rgba(50, 50, 80, 0.03) 100%);
+  transition: all 0.3s ease;
+}
+.theme-card:hover {
+  background: linear-gradient(135deg, rgba(120, 120, 180, 0.1) 0%, rgba(50, 50, 80, 0.06) 100%);
+  box-shadow: 0 0 40px rgba(120, 120, 180, 0.06);
 }
