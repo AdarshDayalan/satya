@@ -22,29 +22,9 @@ interface AppShellProps {
 
 export default function AppShell({ children, filesPanel, headerActions, graphData }: AppShellProps) {
   const [activeNav, setActiveNav] = useState<NavKey>('home')
-  const [sidePanel, setSidePanel] = useState<'files' | 'spaces' | 'graph' | null>(null)
 
   function handleNav(key: NavKey) {
-    if (key === 'home') {
-      setSidePanel(null)
-      setActiveNav('home')
-      return
-    }
-    if (key === 'files') {
-      setSidePanel(sidePanel === 'files' ? null : 'files')
-      setActiveNav('files')
-      return
-    }
-    if (key === 'graph') {
-      setSidePanel(sidePanel === 'graph' ? null : 'graph')
-      setActiveNav('graph')
-      return
-    }
-    if (key === 'publish') {
-      setSidePanel(sidePanel === 'spaces' ? null : 'spaces')
-      setActiveNav('publish')
-      return
-    }
+    setActiveNav(key === activeNav ? 'home' : key)
   }
 
   return (
@@ -60,7 +40,7 @@ export default function AppShell({ children, filesPanel, headerActions, graphDat
             </Link>
 
             <NavButton
-              active={activeNav === 'home' && sidePanel === null}
+              active={activeNav === 'home'}
               onClick={() => handleNav('home')}
               title="Home"
             >
@@ -71,7 +51,7 @@ export default function AppShell({ children, filesPanel, headerActions, graphDat
             </NavButton>
 
             <NavButton
-              active={sidePanel === 'graph'}
+              active={activeNav === 'graph'}
               onClick={() => handleNav('graph')}
               title="Graph"
             >
@@ -84,7 +64,7 @@ export default function AppShell({ children, filesPanel, headerActions, graphDat
             </NavButton>
 
             <NavButton
-              active={sidePanel === 'files'}
+              active={activeNav === 'files'}
               onClick={() => handleNav('files')}
               title="Files"
             >
@@ -95,7 +75,7 @@ export default function AppShell({ children, filesPanel, headerActions, graphDat
             </NavButton>
 
             <NavButton
-              active={sidePanel === 'spaces'}
+              active={activeNav === 'publish'}
               onClick={() => handleNav('publish')}
               title="Spaces"
             >
@@ -123,16 +103,9 @@ export default function AppShell({ children, filesPanel, headerActions, graphDat
           </div>
         </nav>
 
-        {/* Side panels — only one at a time */}
-        {sidePanel === 'files' && (
-          <div className="w-56 shrink-0 border-r border-white/[0.04] bg-[#080808] overflow-y-auto">
-            <ProcessingQueue />
-            {filesPanel}
-          </div>
-        )}
-
-        {sidePanel === 'graph' && graphData && (
-          <div className="w-[400px] shrink-0 border-r border-white/[0.04] bg-[#050505] overflow-hidden">
+        {/* Main content area — switches based on active nav */}
+        {activeNav === 'graph' && graphData ? (
+          <div className="flex-1 overflow-hidden bg-[#050505]">
             <KnowledgeGraph
               nodes={graphData.nodes}
               edges={graphData.edges}
@@ -140,18 +113,20 @@ export default function AppShell({ children, filesPanel, headerActions, graphDat
               folderNodes={graphData.folderNodes}
             />
           </div>
-        )}
-
-        {sidePanel === 'spaces' && (
-          <div className="w-72 shrink-0 border-r border-white/[0.04] bg-[#080808] overflow-y-auto">
+        ) : activeNav === 'files' ? (
+          <div className="flex-1 overflow-y-auto bg-[#080808]">
+            <ProcessingQueue />
+            {filesPanel}
+          </div>
+        ) : activeNav === 'publish' ? (
+          <div className="flex-1 overflow-y-auto bg-[#080808]">
             <SpacesPanel />
           </div>
+        ) : (
+          <div className="flex-1 overflow-y-auto">
+            {children}
+          </div>
         )}
-
-        {/* Main content */}
-        <div className="flex-1 overflow-y-auto">
-          {children}
-        </div>
       </div>
     </div>
   )

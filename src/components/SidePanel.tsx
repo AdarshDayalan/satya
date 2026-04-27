@@ -1,11 +1,13 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { useSelection } from './SelectionContext'
 import EditModal from './EditModal'
 import ConfirmDialog from './ConfirmDialog'
 import CreateEdgeModal from './CreateEdgeModal'
+import AttachmentCard from './AttachmentCard'
+import AddAttachment from './AddAttachment'
 
 const typeColors: Record<string, string> = {
   concept: 'text-pink-400/60',
@@ -56,6 +58,33 @@ export default function SidePanel({ type, id, onClose, onNavigate, allNodes }: S
   const connections = type === 'node' ? store.nodeEdges(id) : []
   const inputData = type === 'input' ? store.inputs.get(id) ?? null : null
   const inputNodesList = type === 'input' ? store.inputNodes(id) : []
+
+  // Attachments (fetched lazily for nodes)
+  interface Attachment {
+    id: string; kind: 'link' | 'image' | 'video' | 'file'; url: string
+    title: string | null; description: string | null; thumbnail_url: string | null
+  }
+  const [attachments, setAttachments] = useState<Attachment[]>([])
+
+  const fetchAttachments = useCallback(async () => {
+    if (type !== 'node') return
+    const res = await fetch(`/api/attachments?node_id=${id}`)
+    if (res.ok) {
+      const data = await res.json()
+      setAttachments(data.attachments || [])
+    }
+  }, [type, id])
+
+  useEffect(() => { fetchAttachments() }, [fetchAttachments])
+
+  async function handleDeleteAttachment(attachmentId: string) {
+    setAttachments(prev => prev.filter(a => a.id !== attachmentId))
+    await fetch('/api/attachments', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: attachmentId }),
+    })
+  }
 
   useEffect(() => {
     function handleKey(e: KeyboardEvent) { if (e.key === 'Escape') onClose() }
@@ -157,6 +186,23 @@ export default function SidePanel({ type, id, onClose, onNavigate, allNodes }: S
           {connections.length === 0 && (
             <p className="text-[11px] text-neutral-700 italic">no connections yet</p>
           )}
+
+          {/* Attachments */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <h3 className="text-[10px] text-neutral-500 uppercase tracking-widest">Attachments</h3>
+              <AddAttachment nodeId={id} onAdded={fetchAttachments} />
+            </div>
+            {attachments.length > 0 ? (
+              <div className="space-y-2">
+                {attachments.map((a) => (
+                  <AttachmentCard key={a.id} attachment={a} onDelete={handleDeleteAttachment} />
+                ))}
+              </div>
+            ) : (
+              <p className="text-[11px] text-neutral-700 italic">no attachments</p>
+            )}
+          </div>
 
           <EditModal isOpen={editing} onClose={() => setEditing(false)} onSave={handleSaveNode} title="Edit node" initialValue={nodeData.content} />
           <ConfirmDialog isOpen={deleting} onClose={() => setDeleting(false)} onConfirm={handleDeleteNode} title="Delete node" message="This will remove this node and all its connections." />
