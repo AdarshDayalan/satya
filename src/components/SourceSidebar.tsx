@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { useSelection } from './SelectionContext'
 
 interface Input {
   id: string
@@ -35,15 +36,14 @@ export default function SourceSidebar({
   folders,
   folderNodes,
   nodes,
-  onSelect,
 }: {
   inputs: Input[]
   folders: Folder[]
   folderNodes: FolderNode[]
   nodes: Node[]
-  onSelect?: (type: 'node' | 'input', id: string) => void
 }) {
   const router = useRouter()
+  const { select } = useSelection()
   const [expanded, setExpanded] = useState<Record<string, boolean>>({ sources: true })
   const [showNewFolder, setShowNewFolder] = useState(false)
   const [newFolderName, setNewFolderName] = useState('')
@@ -116,7 +116,7 @@ export default function SourceSidebar({
           <div key={folder.id}>
             <Row indent={0} open={open} onClick={() => toggle(folder.id)} icon="folder" label={folder.name} count={children.length} />
             {open && children.map((n) => (
-              <div key={n.id} onClick={() => onSelect?.('node', n.id)} className="cursor-pointer">
+              <div key={n.id} onClick={() => select('node', n.id)} className="cursor-pointer">
                 <Row indent={1} label={n.content.slice(0, 36) + (n.content.length > 36 ? '…' : '')} icon="node" nodeType={n.type} />
               </div>
             ))}
@@ -132,7 +132,7 @@ export default function SourceSidebar({
       {/* Sources */}
       <Row indent={0} open={expanded.sources} onClick={() => toggle('sources')} icon="section" label="Sources" count={inputs.length} />
       {expanded.sources && inputs.map((input) => (
-        <div key={input.id} onClick={() => onSelect?.('input', input.id)} className="cursor-pointer">
+        <div key={input.id} onClick={() => select('input', input.id)} className="cursor-pointer">
           <Row indent={1} label={getTitle(input)} icon="source" sourceType={input.source_type || 'journal'} />
         </div>
       ))}

@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { useSelection } from './SelectionContext'
 import NodeList from './NodeList'
 import FolderList from './FolderList'
 import KnowledgeGraph from './KnowledgeGraph'
@@ -55,18 +56,17 @@ export default function HomeTabs({
   folders,
   folderNodes,
   inputs,
-  onSelect,
 }: {
   nodes: Node[]
   edges: Edge[]
   folders: Folder[]
   folderNodes: FolderNode[]
   inputs: Input[]
-  onSelect?: (type: 'node' | 'input', id: string) => void
 }) {
   const [tab, setTab] = useState<TabKey>('graph')
   const [createOpen, setCreateOpen] = useState(false)
   const router = useRouter()
+  const { select } = useSelection()
 
   return (
     <div className="space-y-6">
@@ -102,7 +102,7 @@ export default function HomeTabs({
       {tab === 'fragments' && (
         <div className="space-y-10">
           <FolderList folders={folders} />
-          <NodeList nodes={nodes} inputs={inputs} onSelect={onSelect} />
+          <NodeList nodes={nodes} inputs={inputs} />
         </div>
       )}
     </div>

@@ -1,5 +1,6 @@
 'use client'
 
+import { useSelection } from './SelectionContext'
 
 interface Node {
   id: string
@@ -35,7 +36,8 @@ const SOURCE_CONFIG: Record<string, { label: string; color: string }> = {
   pubmed: { label: 'PubMed', color: 'text-cyan-400/50' },
 }
 
-export default function NodeList({ nodes, inputs, onSelect }: { nodes: Node[]; inputs: Input[]; onSelect?: (type: 'node' | 'input', id: string) => void }) {
+export default function NodeList({ nodes, inputs }: { nodes: Node[]; inputs: Input[] }) {
+  const { select } = useSelection()
   if (nodes.length === 0) {
     return (
       <div className="text-center py-16 space-y-3">
@@ -64,7 +66,7 @@ export default function NodeList({ nodes, inputs, onSelect }: { nodes: Node[]; i
           return (
             <button
               key={node.id}
-              onClick={() => onSelect?.('node', node.id)}
+              onClick={() => select('node', node.id)}
               className="node-card w-full text-left block bg-white/[0.02] border border-white/[0.04] rounded-xl px-4 py-3 hover:bg-white/[0.04]"
             >
               <p className="text-white/80 text-[14px] leading-relaxed">{node.content}</p>

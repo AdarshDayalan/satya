@@ -72,7 +72,7 @@ export default async function NodePage({ params }: { params: Promise<{ id: strin
         </Link>
       </header>
 
-      <main className="max-w-xl mx-auto px-4 py-10 space-y-8 relative z-10">
+      <main className="px-10 py-8 space-y-8 relative z-10 max-w-[900px]">
         <NodeDetail node={node} connections={connections} sourceInput={sourceInput} allNodes={allNodes ?? []} />
       </main>
     </div>

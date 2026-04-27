@@ -44,7 +44,7 @@ export default async function PublishPage() {
         )}
       </header>
 
-      <main className="max-w-2xl mx-auto px-4 py-10 relative z-10">
+      <main className="px-10 py-8 relative z-10 max-w-[900px]">
         <PublishManager
           profile={profile}
           userEmail={user.email ?? ''}

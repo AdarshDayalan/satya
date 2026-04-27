@@ -65,7 +65,7 @@ export default async function InputPage({ params }: { params: Promise<{ id: stri
         {!isJournal && <InputActions inputId={input.id} status={input.status} />}
       </header>
 
-      <main className="max-w-xl mx-auto px-4 py-10 space-y-8 relative z-10">
+      <main className="px-10 py-8 space-y-8 relative z-10 max-w-[900px]">
         <div className="animate-fade-up space-y-3">
           {/* Header meta */}
           <div className="flex items-center gap-3">
