@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import Portal from './Portal'
 import ThemePicker from './ThemePicker'
+import { SOURCE_CREDIBILITY } from '@/lib/evidence-rank'
 
 const PROVIDERS = [
   { id: 'gemini', name: 'Google Gemini', models: ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash'], keyUrl: 'https://aistudio.google.com/apikey', keyLabel: 'aistudio.google.com' },
@@ -18,6 +19,8 @@ export default function SettingsModal({ open, onClose }: { open: boolean; onClos
   const [hasKey, setHasKey] = useState(false)
   const [saving, setSaving] = useState(false)
   const [status, setStatus] = useState<'idle' | 'saved' | 'error'>('idle')
+  const [trustWeights, setTrustWeights] = useState<Record<string, number>>({})
+  const [tab, setTab] = useState<'ai' | 'trust'>('ai')
 
   useEffect(() => {
     if (!open) return
@@ -29,6 +32,7 @@ export default function SettingsModal({ open, onClose }: { open: boolean; onClos
         setMaskedKey(data.ai_api_key_masked || '')
         setHasKey(data.has_key || false)
         setApiKey('')
+        setTrustWeights(data.trust_weights || {})
       })
   }, [open])
 
@@ -38,7 +42,7 @@ export default function SettingsModal({ open, onClose }: { open: boolean; onClos
     const res = await fetch('/api/settings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ai_provider: provider, ai_model: model || undefined, ai_api_key: apiKey || undefined }),
+      body: JSON.stringify({ ai_provider: provider, ai_model: model || undefined, ai_api_key: apiKey || undefined, trust_weights: trustWeights }),
     })
     setSaving(false)
     setStatus(res.ok ? 'saved' : 'error')
@@ -59,10 +63,71 @@ export default function SettingsModal({ open, onClose }: { open: boolean; onClos
       <div className="fixed inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
       <div className="relative z-[101] bg-[#0a0a0a] border border-white/[0.08] rounded-2xl w-full max-w-md mx-4 my-auto p-6 space-y-5 shadow-2xl">
         <div className="flex items-center justify-between">
-          <h2 className="text-sm font-medium text-white/80">AI Settings</h2>
+          <h2 className="text-sm font-medium text-white/80">Settings</h2>
           <button onClick={onClose} className="text-neutral-600 hover:text-neutral-400 text-xs">close</button>
         </div>
 
+        {/* Tabs */}
+        <div className="flex gap-1 border-b border-white/[0.06] pb-0">
+          {(['ai', 'trust'] as const).map(t => (
+            <button key={t} onClick={() => setTab(t)}
+              className={`px-3 py-1.5 text-[11px] rounded-t-lg border-b-2 transition-colors ${tab === t ? 'text-white/80 border-purple-400/60' : 'text-neutral-500 border-transparent hover:text-neutral-300'}`}>
+              {t === 'ai' ? 'AI Provider' : 'Source Trust'}
+            </button>
+          ))}
+        </div>
+
+        {tab === 'trust' ? (
+          <div className="space-y-3">
+            <p className="text-[11px] text-neutral-500">
+              Adjust how much you trust each source type. Higher = more influence in the graph. Changes affect EvidenceRank.
+            </p>
+            <div className="space-y-1.5 max-h-72 overflow-y-auto pr-1">
+              {Object.entries(SOURCE_CREDIBILITY).map(([key, cred]) => {
+                const value = trustWeights[key] ?? cred.score
+                const isCustom = trustWeights[key] !== undefined
+                return (
+                  <div key={key} className="flex items-center gap-2 group">
+                    <span className="text-[11px] text-white/60 w-28 truncate shrink-0" title={cred.label}>{cred.label}</span>
+                    <span className={`text-[9px] w-16 shrink-0 ${
+                      cred.tier === 'peer-reviewed' ? 'text-green-400/60' :
+                      cred.tier === 'institutional' ? 'text-teal-400/60' :
+                      cred.tier === 'editorial' ? 'text-blue-400/60' :
+                      cred.tier === 'media' ? 'text-amber-400/60' :
+                      cred.tier === 'community' ? 'text-orange-400/60' :
+                      cred.tier === 'social' ? 'text-pink-400/60' :
+                      'text-white/40'
+                    }`}>{cred.tier}</span>
+                    <input
+                      type="range" min="0" max="2" step="0.05"
+                      value={value}
+                      onChange={(e) => {
+                        const v = parseFloat(e.target.value)
+                        setTrustWeights(prev => ({ ...prev, [key]: v }))
+                      }}
+                      className="flex-1 accent-purple-400 h-1"
+                    />
+                    <span className={`text-[10px] w-7 text-right font-mono ${isCustom ? 'text-purple-400/80' : 'text-neutral-600'}`}>
+                      {value.toFixed(1)}
+                    </span>
+                    {isCustom && (
+                      <button onClick={() => {
+                        setTrustWeights(prev => { const n = { ...prev }; delete n[key]; return n })
+                      }} className="text-[9px] text-neutral-700 hover:text-neutral-400 opacity-0 group-hover:opacity-100" title="Reset to default">
+                        ↺
+                      </button>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+            {Object.keys(trustWeights).length > 0 && (
+              <button onClick={() => setTrustWeights({})} className="text-[10px] text-neutral-600 hover:text-neutral-400">
+                reset all to defaults
+              </button>
+            )}
+          </div>
+        ) : (
         <div className="space-y-4">
           {/* Provider */}
           <div className="space-y-1.5">
@@ -113,6 +178,7 @@ export default function SettingsModal({ open, onClose }: { open: boolean; onClos
             </p>
           </div>
         </div>
+        )}
 
         <ThemePicker />
 

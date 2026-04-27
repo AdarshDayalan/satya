@@ -37,6 +37,14 @@ const SOURCE_CONFIG: Record<string, { label: string; color: string }> = {
   research_paper: { label: 'Paper', color: 'text-green-400' },
   reddit: { label: 'Reddit', color: 'text-orange-400' },
   pubmed: { label: 'PubMed', color: 'text-cyan-400' },
+  blog: { label: 'Blog', color: 'text-amber-400' },
+  podcast: { label: 'Podcast', color: 'text-violet-400' },
+  book: { label: 'Book', color: 'text-emerald-400' },
+  twitter: { label: 'X / Twitter', color: 'text-sky-400' },
+  tiktok: { label: 'TikTok', color: 'text-rose-400' },
+  newsletter: { label: 'Newsletter', color: 'text-indigo-400' },
+  wikipedia: { label: 'Wikipedia', color: 'text-neutral-300' },
+  government: { label: 'Government', color: 'text-teal-400' },
 }
 
 interface SidePanelProps {
@@ -154,11 +162,13 @@ export default function SidePanel({ type, id, onClose, onNavigate, allNodes, ful
                 const cred = getCredibility(input.source_type)
                 const tierColors: Record<string, string> = {
                   'peer-reviewed': 'text-green-400/70 bg-green-400/10 border-green-400/20',
+                  'institutional': 'text-teal-400/70 bg-teal-400/10 border-teal-400/20',
                   'editorial': 'text-blue-400/60 bg-blue-400/10 border-blue-400/15',
                   'personal': 'text-white/40 bg-white/[0.04] border-white/[0.06]',
                   'media': 'text-amber-400/60 bg-amber-400/10 border-amber-400/15',
                   'community': 'text-orange-400/60 bg-orange-400/10 border-orange-400/15',
                   'social': 'text-pink-400/60 bg-pink-400/10 border-pink-400/15',
+                  'unknown': 'text-neutral-400/60 bg-neutral-400/10 border-neutral-400/15',
                 }
                 return (
                   <>

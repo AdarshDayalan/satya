@@ -120,7 +120,16 @@ export async function POST(req: Request) {
     const prompt = EXTRACT_IDEAS_PROMPT.replace('{{raw_content}}', enrichedContent)
     const extracted = (await generateJson(model, prompt)) as {
       summary: string
+      source_type?: string
       nodes: Array<{ content: string; type: string; source_url?: string | null }>
+    }
+
+    // Use AI-classified source type when URL detection gave a generic result
+    if (extracted.source_type && ['article', 'journal'].includes(source.type)) {
+      const aiType = extracted.source_type
+      if (aiType !== source.type) {
+        await supabase.from('inputs').update({ source_type: aiType }).eq('id', inputRecord.id)
+      }
     }
 
     // Step 3: Create nodes with embeddings and find relationships

@@ -82,6 +82,21 @@ export default function KnowledgeGraph({
   fullscreen?: boolean
   onNodeClick?: (nodeId: string) => void
 }) {
+  const { theme } = useTheme()
+  // Use theme node colors, falling back to hardcoded
+  const TYPE_COLORS_THEMED: Record<string, string> = {
+    ...TYPE_COLORS,
+    concept: theme.nodeColors.concept,
+    idea: theme.nodeColors.idea,
+    question: theme.nodeColors.question,
+    evidence: theme.nodeColors.evidence,
+    mechanism: theme.nodeColors.mechanism,
+    raw: theme.nodeColors.raw,
+  }
+  const themeRef = useRef(theme)
+  themeRef.current = theme
+  const typedColorsRef = useRef(TYPE_COLORS_THEMED)
+  typedColorsRef.current = TYPE_COLORS_THEMED
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const animRef = useRef<number>(0)
   const graphNodes = useRef<GraphNode[]>([])
@@ -317,7 +332,7 @@ export default function KnowledgeGraph({
       ctx.save()
       ctx.scale(2, 2)
       ctx.clearRect(0, 0, w, h)
-      ctx.fillStyle = '#050505'
+      ctx.fillStyle = themeRef.current.graphBg
       ctx.fillRect(0, 0, w, h)
 
       ctx.save()
@@ -491,7 +506,7 @@ export default function KnowledgeGraph({
       // --- Draw nodes ---
       ctx.globalAlpha = 1
       for (const n of gn) {
-        const color = TYPE_COLORS[n.type] || TYPE_COLORS.raw
+        const color = TYPE_COLORS_THEMED[n.type] || TYPE_COLORS.raw
         const r = n.displayRadius ?? n.radius ?? 4
         const alpha = n.displayAlpha ?? 0.85
         const isHovered = hovered === n
@@ -554,7 +569,7 @@ export default function KnowledgeGraph({
           ctx.beginPath()
           ctx.arc(badgeX, badgeY, 6, 0, Math.PI * 2)
           ctx.fill()
-          ctx.fillStyle = '#050505'
+          ctx.fillStyle = themeRef.current.graphBg
           ctx.font = 'bold 7px system-ui'
           ctx.textAlign = 'center'
           ctx.fillText(`${hiddenCount}`, badgeX, badgeY + 2.5)
@@ -849,8 +864,8 @@ export default function KnowledgeGraph({
     <div className={`relative ${fullscreen ? 'h-full' : 'flex-1'}`}>
       <canvas
         ref={canvasRef}
-        className={`w-full bg-[#050505] cursor-grab ${fullscreen ? 'rounded-none border-0 h-full' : 'rounded-2xl border border-white/[0.04]'}`}
-        style={fullscreen ? { height: '100%' } : { height: 'calc(100vh)' }}
+        className={`w-full cursor-grab ${fullscreen ? 'rounded-none border-0 h-full' : 'rounded-2xl border border-white/[0.04]'}`}
+        style={{ backgroundColor: theme.graphBg, ...(fullscreen ? { height: '100%' } : { height: 'calc(100vh)' }) }}
       />
 
       {/* Back button + hint */}
@@ -869,7 +884,7 @@ export default function KnowledgeGraph({
       </div>
 
       {/* Search bar */}
-      <GraphSearchBar nodes={nodes} nodeRadii={nodeRadii} onSelect={(id) => {
+      <GraphSearchBar nodes={nodes} nodeRadii={nodeRadii} typeColors={TYPE_COLORS_THEMED} onSelect={(id) => {
         if (pushFocusRef.current) pushFocusRef.current(id)
         if (onNodeClickRef.current) onNodeClickRef.current(id)
       }} />
@@ -983,9 +998,10 @@ export default function KnowledgeGraph({
 }
 
 // === Graph Search Bar ===
-function GraphSearchBar({ nodes, nodeRadii, onSelect }: {
+function GraphSearchBar({ nodes, nodeRadii, onSelect, typeColors: TYPE_COLORS_THEMED }: {
   nodes: GraphNode[]
   nodeRadii: Map<string, number>
+  typeColors: Record<string, string>
   onSelect: (nodeId: string) => void
 }) {
   const [open, setOpen] = useState(false)
@@ -1110,9 +1126,9 @@ function GraphSearchBar({ nodes, nodeRadii, onSelect }: {
                   <button key={node.id} onClick={() => selectResult(node.id)}
                     onMouseEnter={() => setSelectedIdx(i)}
                     className={`w-full text-left flex items-center gap-2 px-3 py-2 transition-colors ${i === selectedIdx ? 'bg-white/[0.06]' : 'hover:bg-white/[0.03]'}`}>
-                    <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: TYPE_COLORS[node.type] || TYPE_COLORS.raw }} />
+                    <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: TYPE_COLORS_THEMED[node.type] || TYPE_COLORS.raw }} />
                     <span className="text-[11px] text-white/70 truncate flex-1 min-w-0">{node.content}</span>
-                    <span className="text-[9px] text-neutral-700 shrink-0" style={{ color: TYPE_COLORS[node.type] }}>{node.type}</span>
+                    <span className="text-[9px] text-neutral-700 shrink-0" style={{ color: TYPE_COLORS_THEMED[node.type] }}>{node.type}</span>
                     <span className="text-[9px] text-neutral-700 shrink-0 w-4 text-right">{rank.toFixed(0)}</span>
                   </button>
                 )

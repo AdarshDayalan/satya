@@ -32,12 +32,27 @@ interface Input {
  * Higher = more trustworthy = more weight in the graph.
  */
 export const SOURCE_CREDIBILITY: Record<string, { score: number; tier: string; label: string }> = {
+  // Tier: peer-reviewed — highest trust
   pubmed:         { score: 1.5,  tier: 'peer-reviewed', label: 'Peer-reviewed research' },
   research_paper: { score: 1.4,  tier: 'peer-reviewed', label: 'Research paper' },
+  // Tier: institutional — high trust
+  government:     { score: 1.3,  tier: 'institutional', label: 'Government / public health' },
+  wikipedia:      { score: 0.9,  tier: 'institutional', label: 'Wikipedia' },
+  // Tier: editorial — moderate trust
   article:        { score: 0.8,  tier: 'editorial',     label: 'Article / editorial' },
-  reddit:         { score: 0.5,  tier: 'community',     label: 'Community discussion' },
+  newsletter:     { score: 0.75, tier: 'editorial',     label: 'Newsletter' },
+  book:           { score: 1.2,  tier: 'editorial',     label: 'Book' },
+  // Tier: media — lower trust
+  podcast:        { score: 0.65, tier: 'media',         label: 'Podcast' },
   youtube:        { score: 0.6,  tier: 'media',         label: 'Video content' },
+  blog:           { score: 0.6,  tier: 'media',         label: 'Blog post' },
+  // Tier: community — crowd-sourced
+  reddit:         { score: 0.5,  tier: 'community',     label: 'Community discussion' },
+  // Tier: social — lowest external trust
   instagram:      { score: 0.4,  tier: 'social',        label: 'Social media' },
+  twitter:        { score: 0.45, tier: 'social',        label: 'X / Twitter' },
+  tiktok:         { score: 0.35, tier: 'social',        label: 'TikTok' },
+  // Tier: personal — your own thinking
   journal:        { score: 1.0,  tier: 'personal',      label: 'Your own thinking' },
 }
 
@@ -67,7 +82,8 @@ export function computeEvidenceRank(
   edges: Edge[],
   inputs?: Input[],
   iterations: number = 4,
-  damping: number = 0.15
+  damping: number = 0.15,
+  userTrustWeights?: Record<string, number>
 ): Map<string, number> {
   const weights = new Map<string, number>()
 
@@ -83,7 +99,9 @@ export function computeEvidenceRank(
     if (node.input_id) {
       const input = inputMap.get(node.input_id)
       if (input) {
-        baseWeight = SOURCE_CREDIBILITY[input.source_type]?.score ?? 1.0
+        const sourceType = input.source_type
+        // User override takes priority, fall back to defaults
+        baseWeight = userTrustWeights?.[sourceType] ?? SOURCE_CREDIBILITY[sourceType]?.score ?? 1.0
       }
     }
     weights.set(node.id, baseWeight)
@@ -158,5 +176,5 @@ export function weightToRadius(
  * Get credibility info for a source type.
  */
 export function getCredibility(sourceType: string) {
-  return SOURCE_CREDIBILITY[sourceType] || SOURCE_CREDIBILITY.journal
+  return SOURCE_CREDIBILITY[sourceType] || { score: 0.7, tier: 'unknown', label: sourceType }
 }

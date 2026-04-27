@@ -45,6 +45,14 @@ const SOURCE_LABELS: Record<string, { label: string; color: string }> = {
   reddit: { label: 'Reddit', color: 'text-orange-400/60' },
   pubmed: { label: 'PubMed', color: 'text-cyan-400/60' },
   research_paper: { label: 'paper', color: 'text-green-400/60' },
+  blog: { label: 'blog', color: 'text-amber-400/60' },
+  podcast: { label: 'podcast', color: 'text-violet-400/60' },
+  book: { label: 'book', color: 'text-emerald-400/60' },
+  twitter: { label: 'X', color: 'text-sky-400/60' },
+  tiktok: { label: 'TikTok', color: 'text-rose-400/60' },
+  newsletter: { label: 'newsletter', color: 'text-indigo-400/60' },
+  wikipedia: { label: 'Wikipedia', color: 'text-neutral-300/60' },
+  government: { label: 'gov', color: 'text-teal-400/60' },
 }
 
 interface PendingState {

@@ -8,12 +8,12 @@ export async function GET() {
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('ai_provider, ai_model, ai_api_key')
+    .select('ai_provider, ai_model, ai_api_key, trust_weights')
     .eq('user_id', user.id)
     .single()
 
   if (!profile) {
-    return NextResponse.json({ ai_provider: 'gemini', ai_model: '', ai_api_key: '' })
+    return NextResponse.json({ ai_provider: 'gemini', ai_model: '', ai_api_key: '', trust_weights: {} })
   }
 
   // Mask the key for display — only show last 4 chars
@@ -26,6 +26,7 @@ export async function GET() {
     ai_model: profile.ai_model,
     ai_api_key_masked: masked,
     has_key: !!profile.ai_api_key,
+    trust_weights: profile.trust_weights || {},
   })
 }
 
@@ -34,7 +35,7 @@ export async function POST(req: Request) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { ai_provider, ai_model, ai_api_key } = await req.json()
+  const { ai_provider, ai_model, ai_api_key, trust_weights } = await req.json()
 
   // Upsert into profile
   const { data: existing } = await supabase
@@ -43,7 +44,7 @@ export async function POST(req: Request) {
     .eq('user_id', user.id)
     .single()
 
-  const updates: Record<string, string> = {
+  const updates: Record<string, unknown> = {
     ai_provider: ai_provider || 'gemini',
     ai_model: ai_model || '',
   }
@@ -51,6 +52,11 @@ export async function POST(req: Request) {
   // Only update key if a new one was provided (not masked)
   if (ai_api_key && !ai_api_key.startsWith('•')) {
     updates.ai_api_key = ai_api_key
+  }
+
+  // Update trust weights if provided
+  if (trust_weights !== undefined) {
+    updates.trust_weights = trust_weights
   }
 
   if (existing) {

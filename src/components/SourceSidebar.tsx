@@ -378,6 +378,14 @@ const SRC_DOT: Record<string, string> = {
   research_paper: '#34d399',
   reddit: '#fb923c',
   pubmed: '#22d3ee',
+  blog: '#fbbf24',
+  podcast: '#8b5cf6',
+  book: '#10b981',
+  twitter: '#38bdf8',
+  tiktok: '#fb7185',
+  newsletter: '#818cf8',
+  wikipedia: '#d4d4d4',
+  government: '#2dd4bf',
 }
 
 const NODE_DOT: Record<string, string> = {

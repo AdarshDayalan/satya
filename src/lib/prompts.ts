@@ -6,6 +6,7 @@ Input:
 Return JSON:
 {
   "summary": "one line summary of the overall thesis",
+  "source_type": "journal | youtube | article | research_paper | pubmed | reddit | instagram | blog | podcast | book | twitter | tiktok | newsletter | wikipedia | government",
   "nodes": [{ "content": "...", "type": "concept | idea | question | evidence | mechanism", "source_url": "https://... or null" }]
 }
 
@@ -26,7 +27,21 @@ Rules:
 - Do NOT merge nodes that are distinct steps in a causal chain — keep them separate.
 - Do NOT add your own opinions or caveats. Extract what the author wrote.
 - Quality > quantity, but don't under-extract dense content.
-- If the input contains URLs and research context from those URLs, set "source_url" to the specific URL the idea came from. If the idea comes from the user's own writing (not a linked source), set "source_url" to null.`
+- If the input contains URLs and research context from those URLs, set "source_url" to the specific URL the idea came from. If the idea comes from the user's own writing (not a linked source), set "source_url" to null.
+- "source_type": classify what kind of source this content is from based on its tone, structure, and origin. Use your best judgment:
+  - "research_paper" / "pubmed" = academic studies, citations, formal methods
+  - "government" = official health/policy guidance (CDC, WHO, FDA, etc.)
+  - "article" = journalism, news reporting, longform editorial
+  - "blog" = personal opinion pieces, Medium posts, informal writing
+  - "podcast" = transcripts or notes from audio conversations
+  - "book" = excerpts or notes from published books
+  - "youtube" = video content, transcripts
+  - "newsletter" = email-style digests, Substack posts
+  - "reddit" = community discussion threads
+  - "twitter" = tweets, X threads
+  - "tiktok" / "instagram" = short-form social media
+  - "wikipedia" = encyclopedia-style reference
+  - "journal" = the user's own original thinking (no external source)`
 
 export const DETECT_RELATIONSHIPS_PROMPT = `Given a new node and nearby existing nodes from a knowledge graph, find meaningful connections based on the content of the nodes themselves. Do not add external judgment — connect based on what the nodes actually say.
 
