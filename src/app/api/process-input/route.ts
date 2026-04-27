@@ -159,7 +159,7 @@ export async function POST(req: Request) {
           }
 
           for (const rel of parsed.relationships) {
-            if (rel.relationship === 'none' || rel.strength < 0.55) continue
+            if (rel.relationship === 'none' || rel.relationship === 'related' || rel.strength < 0.7) continue
 
             const { data: edge } = await supabase
               .from('edges')

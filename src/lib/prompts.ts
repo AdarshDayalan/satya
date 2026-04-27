@@ -31,9 +31,9 @@ Rules:
 - Preserve uncertainty.
 - Do not exaggerate claims.`
 
-export const DETECT_RELATIONSHIPS_PROMPT = `You are building an organic knowledge graph.
+export const DETECT_RELATIONSHIPS_PROMPT = `You are building an organic knowledge graph. Be highly selective — only connect ideas that genuinely illuminate each other.
 
-Given a new node and nearby existing nodes, decide how they relate.
+Given a new node and nearby existing nodes, decide if any have a STRONG, specific relationship.
 
 New node:
 {{new_node}}
@@ -46,7 +46,7 @@ Return valid JSON only, no markdown fences:
   "relationships": [
     {
       "existing_node_id": "...",
-      "relationship": "similar | supports | contradicts | refines | example_of | causes | related | none",
+      "relationship": "similar | supports | contradicts | refines | example_of | causes | none",
       "strength": 0.0,
       "reason": "..."
     }
@@ -54,13 +54,17 @@ Return valid JSON only, no markdown fences:
 }
 
 Rules:
-- Only create relationships when meaningful.
-- Use "similar" if the ideas are nearly the same.
-- Use "supports" if the new node strengthens the existing idea.
-- Use "contradicts" if it challenges the existing idea.
-- Use "refines" if it narrows, clarifies, or improves the existing idea.
-- Use "related" only when useful.
-- Return none for weak connections.`
+- Most nodes should NOT be connected. Default to "none".
+- Only connect ideas that share a specific, articulable intellectual link.
+- Do NOT connect ideas just because they appear in the same text or share a broad topic.
+- "supports" = one idea provides evidence or reasoning for the other.
+- "contradicts" = they make opposing claims about the same thing.
+- "refines" = one narrows, deepens, or clarifies the other.
+- "example_of" = one is a concrete instance of the other's abstract claim.
+- "causes" = one directly leads to or produces the other.
+- "similar" = they make nearly the same claim in different words. Use sparingly.
+- Never use "related" — if you can't name a specific relationship type, use "none".
+- Strength 0.8+ = strong, clear link. 0.6-0.8 = moderate. Below 0.6 = probably "none".`
 
 export const SUGGEST_FOLDER_PROMPT = `You are identifying emergent themes in a knowledge graph.
 
