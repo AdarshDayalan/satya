@@ -194,7 +194,7 @@ export async function POST(req: Request) {
           }
 
           for (const rel of parsed.relationships) {
-            if (rel.relationship === 'none' || rel.relationship === 'related' || rel.strength < 0.7) continue
+            if (rel.relationship === 'none' || rel.strength < 0.5) continue
 
             const { data: edge } = await supabase
               .from('edges')
@@ -247,7 +247,7 @@ export async function POST(req: Request) {
         }
 
         // Only suggest if cluster is large enough
-        if (connectedNodeIds.size >= 5) {
+        if (connectedNodeIds.size >= 3) {
           const { data: clusterNodes } = await supabase
             .from('nodes')
             .select('id, content, type')

@@ -118,10 +118,7 @@ export default async function InputPage({ params }: { params: Promise<{ id: stri
             status={input.status}
           />
         ) : (
-          /* Non-journal: render as markdown too but read-only */
-          <div className="bg-white/[0.02] border border-white/[0.04] rounded-xl px-5 py-4">
-            <MarkdownContent content={input.raw_content} />
-          </div>
+          <MarkdownContent content={input.raw_content} />
         )}
 
         {/* Extracted nodes */}

@@ -1,6 +1,7 @@
 'use client'
 
-import { useRef, useEffect, useCallback, useState } from 'react'
+import { useRef, useEffect, useCallback, useState, useMemo } from 'react'
+import { computeEvidenceRank, weightToRadius } from '@/lib/evidence-rank'
 import { useRouter } from 'next/navigation'
 
 interface GraphNode {
@@ -118,15 +119,11 @@ export default function KnowledgeGraph({
     folderMap.current = fm
   }, [folderNodes])
 
-  // Count connections per node
-  const connectionCount = useCallback(() => {
-    const counts = new Map<string, number>()
-    for (const e of edges) {
-      counts.set(e.from_node_id, (counts.get(e.from_node_id) || 0) + 1)
-      counts.set(e.to_node_id, (counts.get(e.to_node_id) || 0) + 1)
-    }
-    return counts
-  }, [edges])
+  // Compute EvidenceRank — recursive importance based on evidence flow
+  const nodeRadii = useMemo(() => {
+    const ranks = computeEvidenceRank(nodes, edges, 4, 0.15)
+    return weightToRadius(ranks, 3, 22)
+  }, [nodes, edges])
 
   const init = useCallback(() => {
     const canvas = canvasRef.current
@@ -136,24 +133,20 @@ export default function KnowledgeGraph({
     canvas.width = w * 2
     canvas.height = h * 2
 
-    const counts = connectionCount()
-    const maxConn = Math.max(...counts.values(), 1)
-
     graphNodes.current = nodes.map((n, i) => {
       const angle = (i / nodes.length) * Math.PI * 2
       const r = Math.min(w, h) * 0.3
-      const conn = counts.get(n.id) || 0
       return {
         ...n,
         x: w / 2 + Math.cos(angle) * r + (Math.random() - 0.5) * 60,
         y: h / 2 + Math.sin(angle) * r + (Math.random() - 0.5) * 60,
         vx: 0,
         vy: 0,
-        connections: conn,
-        radius: ((n.type === 'concept' ? 6 : 3) + (conn / maxConn) * 8) * (n.weight || 1),
+        connections: 0,
+        radius: nodeRadii.get(n.id) || 4,
       }
     })
-  }, [nodes, connectionCount])
+  }, [nodes, nodeRadii])
 
   // Find cluster centers for folder labels
   const getClusterCenters = useCallback(() => {
@@ -613,7 +606,7 @@ export default function KnowledgeGraph({
       <canvas
         ref={canvasRef}
         className={`w-full bg-[#050505] cursor-grab ${fullscreen ? 'rounded-none border-0 h-full' : 'rounded-2xl border border-white/[0.04]'}`}
-        style={fullscreen ? { height: '100%' } : { height: 'calc(100vh - 160px)' }}
+        style={fullscreen ? { height: '100%' } : { height: 'calc(100vh)' }}
       />
 
       {/* Hint */}

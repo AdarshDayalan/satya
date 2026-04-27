@@ -7,12 +7,13 @@ export type AIConfig = {
 }
 
 export async function getUserAIConfig(supabase: SupabaseClient, userId: string): Promise<AIConfig> {
-  const { data: profile } = await supabase
+  const { data } = await supabase
     .from('profiles')
     .select('ai_provider, ai_api_key, ai_model')
     .eq('user_id', userId)
     .single()
 
+  const profile = data as { ai_api_key?: string; ai_provider?: string; ai_model?: string } | null
   const apiKey = profile?.ai_api_key || ''
 
   if (!apiKey) {
