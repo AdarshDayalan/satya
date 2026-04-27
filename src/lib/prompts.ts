@@ -28,7 +28,7 @@ Return:
 }
 
 Rules:
-- Extract as many or as few nodes as the text warrants. A short text with one insight = 1 node. A dense text with many truths = many nodes. Let the content dictate the count.
+- Extract as many or as few nodes as the context warrants. Focus on what matters — the meaningful truths and ideas present, regardless of text length or density.
 - Only extract concept nodes when the text genuinely reveals a core truth or belief. Don't force it.
 - Concept nodes must be truth claims — statements that can be supported or challenged, not labels or names.
 - Idea nodes should be atomic, specific claims — not vague summaries.
