@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import Portal from './Portal'
+import MarkdownContent from './MarkdownContent'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import ActionMenu from './ActionMenu'
@@ -147,7 +148,7 @@ export default function NodeDetail({ node, connections, sourceInput, allNodes }:
             { label: 'Delete', onClick: () => setDeleting(true), danger: true },
           ]} />
         </div>
-        <p className="text-[18px] text-white/90 leading-relaxed">{node.content}</p>
+        <MarkdownContent content={node.content} />
         <div className="flex items-center gap-4">
           <p className="text-[11px] text-neutral-700">
             {new Date(node.created_at).toLocaleDateString()}

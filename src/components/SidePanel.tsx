@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useSelection } from './SelectionContext'
+import MarkdownContent from './MarkdownContent'
 import EditModal from './EditModal'
 import ConfirmDialog from './ConfirmDialog'
 import CreateEdgeModal from './CreateEdgeModal'
@@ -147,7 +148,7 @@ export default function SidePanel({ type, id, onClose, onNavigate, allNodes, ful
                 {new Date(nodeData.created_at).toLocaleDateString()}
               </span>
             </div>
-            <p className="text-[14px] text-white/85 leading-relaxed">{nodeData.content}</p>
+            <MarkdownContent content={nodeData.content} />
           </div>
 
           <div className="flex gap-2">
@@ -237,9 +238,7 @@ export default function SidePanel({ type, id, onClose, onNavigate, allNodes, ful
           </div>
 
           <div className="bg-white/[0.02] border border-white/[0.04] rounded-lg px-3 py-2.5">
-            <p className="text-[12px] text-white/60 leading-relaxed whitespace-pre-wrap">
-              {inputData.raw_content}
-            </p>
+            <MarkdownContent content={inputData.raw_content} />
           </div>
 
           <div className="flex gap-2">

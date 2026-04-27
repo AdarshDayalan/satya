@@ -207,13 +207,19 @@ async function extractInstagram(
       if (ogVideo) metadata.videoUrl = ogVideo
 
       // Try to get author from title pattern "Author on Instagram: ..."
-      const titleMatch = (metadata.caption as string)?.match(/^(.+?)\s+on\s+Instagram:\s*[""](.+)[""]/s)
-      if (titleMatch) {
-        metadata.author = titleMatch[1].trim()
-        metadata.caption = titleMatch[2].trim()
+      const captionStr = (metadata.caption as string) || ''
+      // Match: "Author on Instagram: "caption text""
+      const onInstaIdx = captionStr.indexOf(' on Instagram:')
+      if (onInstaIdx > 0) {
+        metadata.author = captionStr.slice(0, onInstaIdx).trim()
+        // Strip the "Author on Instagram: " prefix and surrounding quotes
+        let rest = captionStr.slice(onInstaIdx + ' on Instagram:'.length).trim()
+        // Remove leading/trailing smart or straight quotes
+        rest = rest.replace(/^[""\u201C\u201D]+|[""\u201C\u201D]+$/g, '').trim()
+        if (rest) metadata.caption = rest
       } else {
-        // Alternative pattern: "Instagram: ..."
-        const altMatch = (metadata.caption as string)?.match(/^(.+?)\s+(?:posted on|shared a)\s+/i)
+        // Alternative pattern
+        const altMatch = captionStr.match(/^(.+?)\s+(?:posted on|shared a)\s+/i)
         if (altMatch) metadata.author = altMatch[1].trim()
       }
 
