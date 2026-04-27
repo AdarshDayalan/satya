@@ -170,28 +170,104 @@ async function extractInstagram(
 
   const metadata: Record<string, unknown> = { url }
 
-  // Instagram oEmbed (limited but free)
+  // Strategy 1: fetch the page HTML and parse embedded JSON-LD / meta tags
   try {
-    const oembed = await fetch(
-      `https://graph.facebook.com/v18.0/instagram_oembed?url=${encodeURIComponent(url)}&access_token=public`,
-      { signal: AbortSignal.timeout(5000) }
-    )
-    if (oembed.ok) {
-      const data = await oembed.json()
-      if (data.title) metadata.caption = data.title
-      if (data.author_name) metadata.author = data.author_name
+    // Googlebot UA is needed — Instagram blocks normal UAs for non-logged-in users
+    const res = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
+        'Accept': 'text/html,application/xhtml+xml',
+        'Accept-Language': 'en-US,en;q=0.9',
+      },
+      signal: AbortSignal.timeout(10000),
+      redirect: 'follow',
+    })
+
+    if (res.ok) {
+      const html = await res.text()
+
+      // Try og:title (usually has caption)
+      const ogTitle = html.match(/<meta\s+(?:property|name)=["']og:title["']\s+content=["']([^"']+)["']/i)?.[1]
+        || html.match(/<meta\s+content=["']([^"']+)["']\s+(?:property|name)=["']og:title["']/i)?.[1]
+      if (ogTitle) metadata.caption = decodeHtmlEntities(ogTitle)
+
+      // og:description often has more detail
+      const ogDesc = html.match(/<meta\s+(?:property|name)=["']og:description["']\s+content=["']([^"']+)["']/i)?.[1]
+        || html.match(/<meta\s+content=["']([^"']+)["']\s+(?:property|name)=["']og:description["']/i)?.[1]
+      if (ogDesc) metadata.description = decodeHtmlEntities(ogDesc)
+
+      // og:image for thumbnail
+      const ogImage = html.match(/<meta\s+(?:property|name)=["']og:image["']\s+content=["']([^"']+)["']/i)?.[1]
+        || html.match(/<meta\s+content=["']([^"']+)["']\s+(?:property|name)=["']og:image["']/i)?.[1]
+      if (ogImage) metadata.thumbnail = ogImage
+
+      // og:video for reels
+      const ogVideo = html.match(/<meta\s+(?:property|name)=["']og:video["']\s+content=["']([^"']+)["']/i)?.[1]
+        || html.match(/<meta\s+content=["']([^"']+)["']\s+(?:property|name)=["']og:video["']/i)?.[1]
+      if (ogVideo) metadata.videoUrl = ogVideo
+
+      // Try to get author from title pattern "Author on Instagram: ..."
+      const titleMatch = (metadata.caption as string)?.match(/^(.+?)\s+on\s+Instagram:\s*[""](.+)[""]/s)
+      if (titleMatch) {
+        metadata.author = titleMatch[1].trim()
+        metadata.caption = titleMatch[2].trim()
+      } else {
+        // Alternative pattern: "Instagram: ..."
+        const altMatch = (metadata.caption as string)?.match(/^(.+?)\s+(?:posted on|shared a)\s+/i)
+        if (altMatch) metadata.author = altMatch[1].trim()
+      }
+
+      // Parse author from description if not found yet
+      if (!metadata.author && ogDesc) {
+        const descAuthor = ogDesc.match(/^(\d[\d,]*)\s+likes?,\s+(\d+)\s+comments?\s+-\s+(.+?)\s+\(/i)
+        if (descAuthor) {
+          metadata.likes = descAuthor[1]
+          metadata.comments = descAuthor[2]
+          metadata.author = descAuthor[3]
+        }
+      }
+
+      // Detect if it's a Reel/Video — also check og:url which may redirect /p/ to /reel/
+      const ogUrl = html.match(/<meta\s+(?:property|name)=["']og:url["']\s+content=["']([^"']+)["']/i)?.[1]
+        || html.match(/<meta\s+content=["']([^"']+)["']\s+(?:property|name)=["']og:url["']/i)?.[1]
+      const isReel = url.includes('/reel/') || ogUrl?.includes('/reel/') || !!ogVideo
+      metadata.type = isReel ? 'reel' : 'post'
     }
-  } catch { /* Instagram oEmbed often blocked without app token */ }
+  } catch { /* page fetch failed */ }
+
+  const postType = metadata.type === 'reel' ? 'Instagram Reel' : 'Instagram Post'
+
+  // Extract engagement from description if not already parsed
+  if (!metadata.likes && metadata.description) {
+    const engMatch = (metadata.description as string).match(/^([\d,]+)\s+likes?,\s+([\d,]+)\s+comments?/i)
+    if (engMatch) {
+      metadata.likes = engMatch[1]
+      metadata.comments = engMatch[2]
+    }
+  }
 
   const enriched = [
-    `[Instagram Post]`,
-    metadata.author ? `Author: ${metadata.author}` : null,
-    metadata.caption ? `Caption: ${metadata.caption}` : null,
+    `[${postType}]`,
+    metadata.author ? `Author: @${(metadata.author as string).replace(/^@/, '')}` : null,
+    metadata.likes ? `Engagement: ${metadata.likes} likes, ${metadata.comments} comments` : null,
     '',
-    rawContent,
+    metadata.caption ? `Caption:\n${metadata.caption}` : null,
+    '',
+    rawContent.replace(/https?:\/\/[^\s]+/g, '').trim() || null,
   ].filter(Boolean).join('\n')
 
   return { enrichedContent: enriched, metadata }
+}
+
+function decodeHtmlEntities(text: string): string {
+  return text
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#039;/g, "'")
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCodePoint(parseInt(hex, 16)))
+    .replace(/&#(\d+);/g, (_, num) => String.fromCodePoint(parseInt(num)))
 }
 
 async function extractReddit(
