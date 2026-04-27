@@ -63,7 +63,12 @@ export default async function HomePage() {
       </header>
 
       <div className="flex relative z-10" style={{ minHeight: 'calc(100vh - 49px)' }}>
-        <SourceSidebar inputs={inputs ?? []} />
+        <SourceSidebar
+          inputs={inputs ?? []}
+          folders={folders ?? []}
+          folderNodes={folderNodesData ?? []}
+          nodes={nodes ?? []}
+        />
 
         <main className="flex-1 max-w-2xl mx-auto px-6 py-10 space-y-10">
           <InputBox />

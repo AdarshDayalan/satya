@@ -5,17 +5,7 @@ import { useRouter } from 'next/navigation'
 
 type SourceType = 'journal' | 'youtube' | 'instagram' | 'article' | 'research_paper' | 'reddit' | 'pubmed'
 
-type Result = {
-  nodes: number
-  edges: number
-  folder: string | null
-}
-
-type Preview = {
-  enrichedContent: string
-  metadata: Record<string, unknown>
-  sourceType: SourceType
-}
+type CaptureState = 'idle' | 'capturing' | 'captured' | 'processing' | 'done' | 'error'
 
 const SOURCE_LABELS: Record<SourceType, { label: string; color: string }> = {
   journal: { label: 'journal', color: 'text-white/40' },
@@ -39,13 +29,11 @@ function detectSourceType(text: string): SourceType {
 
 export default function InputBox() {
   const [content, setContent] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [result, setResult] = useState<Result | null>(null)
+  const [state, setState] = useState<CaptureState>('idle')
+  const [statusMsg, setStatusMsg] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [listening, setListening] = useState(false)
-  const [preview, setPreview] = useState<Preview | null>(null)
-  const [previewing, setPreviewing] = useState(false)
-  const [personalNote, setPersonalNote] = useState('')
+  const [expanded, setExpanded] = useState(false)
   const recognitionRef = useRef<SpeechRecognition | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const router = useRouter()
@@ -64,111 +52,112 @@ export default function InputBox() {
   useEffect(() => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
     if (!SpeechRecognition) return
-
     const recognition = new SpeechRecognition()
     recognition.continuous = true
     recognition.interimResults = true
     recognition.lang = 'en-US'
-
     recognition.onresult = (event: SpeechRecognitionEvent) => {
       let final = ''
       for (let i = 0; i < event.results.length; i++) {
-        const transcript = event.results[i][0].transcript
-        if (event.results[i].isFinal) {
-          final += transcript + ' '
-        }
+        if (event.results[i].isFinal) final += event.results[i][0].transcript + ' '
       }
-      if (final) {
-        setContent((prev) => prev + final)
-      }
+      if (final) setContent(prev => prev + final)
     }
-
     recognition.onerror = () => setListening(false)
     recognition.onend = () => setListening(false)
-
     recognitionRef.current = recognition
   }, [])
 
   function toggleListening() {
     if (!recognitionRef.current) return
-    if (listening) {
-      recognitionRef.current.stop()
-    } else {
-      recognitionRef.current.start()
-      setListening(true)
-    }
-  }
-
-  async function handlePreview() {
-    if (!content.trim()) return
-    setPreviewing(true)
-    setError(null)
-
-    try {
-      const res = await fetch('/api/extract-preview', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ raw_content: content }),
-      })
-      const data = await res.json()
-      if (res.ok) {
-        setPreview(data)
-      } else {
-        setError(data.error || 'Failed to extract content')
-      }
-    } catch {
-      setError('Connection failed. Try again.')
-    }
-
-    setPreviewing(false)
+    if (listening) recognitionRef.current.stop()
+    else { recognitionRef.current.start(); setListening(true) }
   }
 
   async function handleSubmit(e?: React.FormEvent) {
     e?.preventDefault()
-    if (!content.trim()) return
+    if (!content.trim() || state === 'capturing' || state === 'processing') return
 
-    setLoading(true)
-    setResult(null)
+    const submittedContent = content
+
+    // Step 1: Capture instantly
+    setState('capturing')
+    setStatusMsg('saving...')
     setError(null)
 
     try {
-      const res = await fetch('/api/process-input', {
+      const captureRes = await fetch('/api/capture', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          raw_content: personalNote
-            ? `${content}\n\nPersonal notes: ${personalNote}`
-            : content,
-        }),
+        body: JSON.stringify({ raw_content: submittedContent }),
       })
 
-      const data = await res.json()
-
-      if (res.ok) {
-        setResult({
-          nodes: data.nodes?.length ?? 0,
-          edges: data.edges?.length ?? 0,
-          folder: data.folder?.name ?? null,
-        })
-        setContent('')
-        setPreview(null)
-        setPersonalNote('')
-        router.refresh()
-      } else {
-        setError(data.message || 'Processing failed — your input was saved.')
+      if (!captureRes.ok) {
+        const data = await captureRes.json()
+        throw new Error(data.error || 'Failed to save')
       }
-    } catch {
-      setError('Connection failed. Try again.')
-    }
 
-    setLoading(false)
+      // Instant feedback — clear input immediately
+      setState('captured')
+      setStatusMsg('captured')
+      setContent('')
+      setExpanded(false)
+      router.refresh()
+
+      // Step 2: Process in background (don't await — fire and forget)
+      setState('processing')
+      setStatusMsg('extracting meaning...')
+
+      fetch('/api/process-input', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ raw_content: submittedContent }),
+      }).then(async (res) => {
+        if (res.ok) {
+          const data = await res.json()
+          const nodes = data.nodes?.length ?? 0
+          const edges = data.edges?.length ?? 0
+          const folder = data.folder?.name
+          setStatusMsg(
+            `${nodes} nodes · ${edges} connections` +
+            (folder ? ` · theme: ${folder}` : '')
+          )
+          setState('done')
+          router.refresh()
+        } else {
+          const data = await res.json()
+          setStatusMsg(data.message || 'extraction failed — input saved')
+          setState('error')
+        }
+        // Auto-clear status after a few seconds
+        setTimeout(() => {
+          setState('idle')
+          setStatusMsg('')
+        }, 5000)
+      }).catch(() => {
+        setStatusMsg('extraction failed — input saved')
+        setState('error')
+        setTimeout(() => { setState('idle'); setStatusMsg('') }, 5000)
+      })
+
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save')
+      setState('idle')
+    }
   }
 
-  const [expanded, setExpanded] = useState(false)
+  const stateColors: Record<CaptureState, string> = {
+    idle: '',
+    capturing: 'text-neutral-500',
+    captured: 'text-green-400/60',
+    processing: 'text-amber-400/60',
+    done: 'text-green-400/60',
+    error: 'text-red-400/60',
+  }
 
   return (
-    <div className="space-y-4">
-      <form onSubmit={(e) => { e.preventDefault(); isUrlSource ? handlePreview() : handleSubmit() }}>
+    <div className="space-y-3">
+      <form onSubmit={(e) => { e.preventDefault(); handleSubmit() }}>
         <div className="input-glow rounded-2xl">
           <textarea
             ref={textareaRef}
@@ -177,25 +166,19 @@ export default function InputBox() {
               setContent(e.target.value)
               autoResize()
               if (error) setError(null)
-              if (result) setResult(null)
-              if (preview) setPreview(null)
-              // Auto-expand for journal writing
               if (!expanded && e.target.value.includes('\n')) setExpanded(true)
             }}
             onKeyDown={(e) => {
-              // Cmd+Enter to submit
-              if (e.key === 'Enter' && e.metaKey) {
-                e.preventDefault()
-                isUrlSource ? handlePreview() : handleSubmit()
-              }
+              if (e.key === 'Enter' && e.metaKey) { e.preventDefault(); handleSubmit() }
             }}
-            placeholder={expanded ? "write freely — markdown supported..." : "drop anything here..."}
+            placeholder={expanded ? 'write freely — markdown supported...' : 'drop anything here...'}
             rows={expanded ? 8 : 2}
-            disabled={loading || previewing}
+            disabled={state === 'capturing'}
             className={`w-full px-5 py-4 bg-white/[0.03] border border-white/[0.06] rounded-2xl text-white/90 placeholder-neutral-600 resize-none focus:outline-none focus:border-white/[0.12] transition-all text-[15px] leading-relaxed disabled:opacity-40 ${expanded ? 'font-mono text-[14px]' : ''}`}
             style={{ minHeight: expanded ? '200px' : '5rem', overflow: 'hidden' }}
           />
         </div>
+
         <div className="flex items-center justify-between mt-3 px-1">
           <div className="flex items-center gap-3">
             {isUrlSource && (
@@ -214,14 +197,15 @@ export default function InputBox() {
             )}
           </div>
           {expanded && !isUrlSource && (
-            <span className="text-[10px] text-neutral-700">markdown supported · ⌘Enter to process</span>
+            <span className="text-[10px] text-neutral-700">markdown · ⌘Enter</span>
           )}
         </div>
+
         <div className="flex items-center justify-between mt-2 px-1">
           <button
             type="button"
             onClick={toggleListening}
-            disabled={loading || previewing || !recognitionRef.current}
+            disabled={state === 'capturing' || !recognitionRef.current}
             className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-all disabled:opacity-20 disabled:cursor-default ${
               listening
                 ? 'text-red-400 bg-red-400/10 border-red-400/30 animate-pulse-soft'
@@ -232,94 +216,28 @@ export default function InputBox() {
           </button>
           <button
             type="submit"
-            disabled={loading || previewing || !content.trim()}
+            disabled={state === 'capturing' || !content.trim()}
             className="px-4 py-1.5 text-xs font-medium text-white/60 bg-white/[0.06] rounded-lg hover:bg-white/[0.1] hover:text-white/90 border border-white/[0.06] transition-all disabled:opacity-20 disabled:cursor-default"
           >
-            {loading ? (
-              <span className="animate-pulse-soft">extracting meaning...</span>
-            ) : previewing ? (
-              <span className="animate-pulse-soft">fetching content...</span>
-            ) : isUrlSource ? (
-              'preview'
-            ) : (
-              'process'
-            )}
+            {state === 'capturing' ? 'saving...' : 'drop'}
           </button>
         </div>
       </form>
 
-      {/* Preview panel for URL sources */}
-      {preview && (
-        <div className="animate-fade-up space-y-3">
-          <div className="bg-white/[0.02] border border-white/[0.06] rounded-2xl px-5 py-4 space-y-3">
-            <div className="flex items-center gap-2">
-              <span className={`text-[11px] font-medium uppercase tracking-widest ${SOURCE_LABELS[preview.sourceType]?.color || 'text-white/40'}`}>
-                {SOURCE_LABELS[preview.sourceType]?.label || preview.sourceType}
-              </span>
-              {preview.metadata.title ? (
-                <>
-                  <span className="text-neutral-800">·</span>
-                  <span className="text-[12px] text-white/70 font-medium">{String(preview.metadata.title)}</span>
-                </>
-              ) : null}
-            </div>
-            {preview.metadata.author ? (
-              <p className="text-[12px] text-neutral-500">{String(preview.metadata.author)}</p>
-            ) : null}
-            {preview.metadata.authors ? (
-              <p className="text-[12px] text-neutral-500">{String(preview.metadata.authors)}</p>
-            ) : null}
-            {preview.metadata.subreddit ? (
-              <p className="text-[12px] text-orange-400/60">{String(preview.metadata.subreddit)}</p>
-            ) : null}
-            <div className="max-h-48 overflow-y-auto">
-              <p className="text-[13px] text-white/60 leading-relaxed whitespace-pre-wrap">
-                {preview.enrichedContent.slice(0, 2000)}
-                {preview.enrichedContent.length > 2000 ? '…' : ''}
-              </p>
-            </div>
-          </div>
-          <div className="bg-white/[0.02] border border-white/[0.06] rounded-2xl px-5 py-3">
-            <textarea
-              value={personalNote}
-              onChange={(e) => setPersonalNote(e.target.value)}
-              placeholder="add your notes about this source..."
-              rows={2}
-              className="w-full bg-transparent text-white/80 placeholder-neutral-600 resize-none focus:outline-none text-[13px] leading-relaxed"
-            />
-          </div>
-          <div className="flex items-center gap-2 px-1">
-            <button
-              onClick={() => handleSubmit()}
-              disabled={loading}
-              className="px-4 py-1.5 text-xs font-medium text-white/80 bg-white/[0.08] rounded-lg hover:bg-white/[0.12] border border-white/[0.08] transition-all disabled:opacity-40"
-            >
-              {loading ? (
-                <span className="animate-pulse-soft">extracting meaning...</span>
-              ) : (
-                'confirm & process'
-              )}
-            </button>
-            <button
-              onClick={() => setPreview(null)}
-              className="px-3 py-1.5 text-xs text-neutral-600 hover:text-neutral-400 transition-colors"
-            >
-              cancel
-            </button>
-          </div>
-        </div>
-      )}
-
-      {result && (
-        <div className="animate-fade-up space-y-1 px-1">
-          <p className="text-[13px] text-neutral-400">
-            {result.nodes} meaning nodes extracted · {result.edges} connections found
-          </p>
-          {result.folder && (
-            <p className="text-[12px] text-purple-400/60">
-              new theme emerged: {result.folder}
-            </p>
+      {/* Status line */}
+      {statusMsg && (
+        <div className={`animate-fade-up flex items-center gap-2 px-1 ${stateColors[state]}`}>
+          {state === 'processing' && (
+            <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-400/60 animate-pulse-soft" />
           )}
+          {state === 'done' && (
+            <span className="inline-block w-1.5 h-1.5 rounded-full bg-green-400/60" />
+          )}
+          <span className="text-[12px]">
+            {state === 'processing' ? (
+              <span className="animate-pulse-soft">{statusMsg}</span>
+            ) : statusMsg}
+          </span>
         </div>
       )}
 

@@ -5,6 +5,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import EditModal from './EditModal'
 import ConfirmDialog from './ConfirmDialog'
+import ProcessingQueue from './ProcessingQueue'
 
 interface Input {
   id: string
@@ -55,6 +56,8 @@ export default function SourceSidebar({ inputs }: { inputs: Input[] }) {
   return (
     <aside className="w-64 shrink-0 border-r border-white/[0.04] bg-white/[0.01] overflow-y-auto">
       <div className="p-4 space-y-4">
+        <ProcessingQueue />
+
         <h2 className="text-[11px] font-medium text-neutral-600 uppercase tracking-widest">
           Sources
         </h2>
