@@ -100,8 +100,9 @@ export async function POST(req: Request) {
       let embedding: number[] | null = null
       try {
         embedding = await generateEmbedding(aiConfig.apiKey, node.content, aiConfig.provider as Provider)
-      } catch {
-        // Continue without embedding
+        if (embedding && embedding.length === 0) embedding = null
+      } catch (embErr) {
+        console.error('[satya] Embedding failed:', embErr)
       }
 
       const { data: savedNode } = await supabase
@@ -121,54 +122,62 @@ export async function POST(req: Request) {
       createdNodes.push(savedNode)
 
       // Step 4: Find similar nodes and detect relationships
+      let candidates: Array<{ id: string; content: string }> = []
+
       if (embedding) {
         const { data: nearbyNodes } = await supabase.rpc('match_nodes', {
           query_embedding: JSON.stringify(embedding),
           match_user_id: user.id,
           match_count: 5,
         })
-
-        const candidates = (nearbyNodes ?? []).filter(
+        candidates = (nearbyNodes ?? []).filter(
           (n: { id: string }) => n.id !== savedNode.id
         )
+      }
 
-        if (candidates.length > 0) {
-          try {
-            const relPrompt = DETECT_RELATIONSHIPS_PROMPT.replace(
-              '{{new_node}}',
-              JSON.stringify({ id: savedNode.id, content: savedNode.content })
-            ).replace('{{nearby_nodes}}', JSON.stringify(candidates))
+      // Fallback: use sibling nodes from this batch if no embedding matches
+      if (candidates.length === 0 && createdNodes.length > 1) {
+        candidates = createdNodes
+          .filter((c) => c.id !== savedNode.id)
+          .map((c) => ({ id: c.id, content: c.content }))
+      }
 
-            const parsed = (await generateJson(model, relPrompt)) as {
-              relationships: Array<{
-                existing_node_id: string
-                relationship: string
-                strength: number
-                reason: string
-              }>
-            }
+      if (candidates.length > 0) {
+        try {
+          const relPrompt = DETECT_RELATIONSHIPS_PROMPT.replace(
+            '{{new_node}}',
+            JSON.stringify({ id: savedNode.id, content: savedNode.content })
+          ).replace('{{nearby_nodes}}', JSON.stringify(candidates))
 
-            for (const rel of parsed.relationships) {
-              if (rel.relationship === 'none' || rel.strength < 0.55) continue
-
-              const { data: edge } = await supabase
-                .from('edges')
-                .insert({
-                  user_id: user.id,
-                  from_node_id: savedNode.id,
-                  to_node_id: rel.existing_node_id,
-                  relationship: rel.relationship,
-                  strength: rel.strength,
-                  reason: rel.reason,
-                })
-                .select()
-                .single()
-
-              if (edge) createdEdges.push(edge)
-            }
-          } catch {
-            // Relationship detection failed — nodes still saved
+          const parsed = (await generateJson(model, relPrompt)) as {
+            relationships: Array<{
+              existing_node_id: string
+              relationship: string
+              strength: number
+              reason: string
+            }>
           }
+
+          for (const rel of parsed.relationships) {
+            if (rel.relationship === 'none' || rel.strength < 0.55) continue
+
+            const { data: edge } = await supabase
+              .from('edges')
+              .insert({
+                user_id: user.id,
+                from_node_id: savedNode.id,
+                to_node_id: rel.existing_node_id,
+                relationship: rel.relationship,
+                strength: rel.strength,
+                reason: rel.reason,
+              })
+              .select()
+              .single()
+
+            if (edge) createdEdges.push(edge)
+          }
+        } catch (relErr) {
+          console.error('[satya] Relationship detection failed:', relErr)
         }
       }
     }

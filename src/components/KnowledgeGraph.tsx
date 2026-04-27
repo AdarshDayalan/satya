@@ -350,15 +350,14 @@ export default function KnowledgeGraph({
         ctx.globalAlpha = isHovered ? 1 : 0.85
         ctx.fill()
 
-        // Label — only show on hover or for high-connectivity nodes
-        if (isHovered || (n.connections || 0) >= 3) {
-          ctx.fillStyle = isHovered ? 'rgba(255,255,255,0.8)' : 'rgba(255,255,255,0.3)'
-          ctx.font = `${isHovered ? 11 : 9}px system-ui`
-          ctx.textAlign = 'center'
-          ctx.globalAlpha = isHovered ? 1 : 0.4
-          const label = n.content.length > 35 ? n.content.slice(0, 35) + '…' : n.content
-          ctx.fillText(label, n.x!, n.y! + r + 14)
-        }
+        // Label — always show truncated text, brighter on hover
+        ctx.fillStyle = isHovered ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.45)'
+        ctx.font = `${isHovered ? 11 : 9}px system-ui`
+        ctx.textAlign = 'center'
+        ctx.globalAlpha = isHovered ? 1 : 0.6
+        const maxLen = isHovered ? 50 : 25
+        const label = n.content.length > maxLen ? n.content.slice(0, maxLen) + '…' : n.content
+        ctx.fillText(label, n.x!, n.y! + r + 14)
 
         ctx.globalAlpha = 1
       }
