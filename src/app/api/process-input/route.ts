@@ -68,7 +68,8 @@ export async function POST(req: Request) {
   }
 
   try {
-    const model = getModel()
+    const apiKey = process.env.GEMINI_API_KEY!
+    const model = getModel(apiKey)
 
     // Step 2: Extract meaning nodes (with retry)
     const prompt = EXTRACT_IDEAS_PROMPT.replace('{{raw_content}}', enrichedContent)
@@ -88,7 +89,7 @@ export async function POST(req: Request) {
     for (const node of extracted.nodes) {
       let embedding: number[] | null = null
       try {
-        embedding = await generateEmbedding(node.content)
+        embedding = await generateEmbedding(apiKey, node.content)
       } catch {
         // Continue without embedding
       }

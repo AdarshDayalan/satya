@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
+import InputActions from '@/components/InputActions'
 
 const SOURCE_CONFIG: Record<string, { label: string; color: string }> = {
   journal: { label: 'Journal', color: 'text-white/50' },
@@ -63,10 +64,12 @@ export default async function InputPage({ params }: { params: Promise<{ id: stri
               {new Date(input.created_at).toLocaleDateString()}
             </span>
             <span className="text-neutral-800">·</span>
-            <span className={`text-[11px] ${input.status === 'processed' ? 'text-green-400/50' : 'text-amber-400/50'}`}>
+            <span className={`text-[11px] ${input.status === 'processed' ? 'text-green-400/50' : input.status === 'failed' ? 'text-red-400/50' : 'text-amber-400/50'}`}>
               {input.status}
             </span>
           </div>
+
+          <InputActions inputId={input.id} status={input.status} />
 
           {/* Source metadata */}
           {metadata.title && (

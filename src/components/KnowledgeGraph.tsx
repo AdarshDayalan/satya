@@ -174,18 +174,8 @@ export default function KnowledgeGraph({
       ctx.globalAlpha = 1
       for (const n of gn) {
         const color = TYPE_COLORS[n.type] || TYPE_COLORS.raw
-        const glow = 6 + Math.sin(time.current * 1.5 + n.x! * 0.01) * 3
 
-        // Glow
-        const grad = ctx.createRadialGradient(n.x!, n.y!, 0, n.x!, n.y!, glow * 3)
-        grad.addColorStop(0, color + '30')
-        grad.addColorStop(1, color + '00')
-        ctx.beginPath()
-        ctx.arc(n.x!, n.y!, glow * 3, 0, Math.PI * 2)
-        ctx.fillStyle = grad
-        ctx.fill()
-
-        // Core
+        // Core dot
         ctx.beginPath()
         ctx.arc(n.x!, n.y!, 4, 0, Math.PI * 2)
         ctx.fillStyle = color
@@ -223,7 +213,7 @@ export default function KnowledgeGraph({
     <canvas
       ref={canvasRef}
       className="w-full rounded-2xl border border-white/[0.04] bg-[#050505]"
-      style={{ height: '400px' }}
+      style={{ height: '600px' }}
     />
   )
 }

@@ -41,14 +41,19 @@ export default async function HomePage() {
 
       <header className="sticky top-0 z-20 backdrop-blur-xl bg-[#050505]/80 border-b border-white/[0.04] px-4 py-3 flex items-center justify-between">
         <h1 className="text-lg font-light tracking-tight text-white/90">Satya</h1>
-        <form action="/auth/signout" method="post">
-          <button
-            type="submit"
-            className="text-[12px] text-neutral-600 hover:text-neutral-400 transition-colors"
-          >
-            exit
-          </button>
-        </form>
+        <div className="flex items-center gap-4">
+          <a href="/publish" className="text-[12px] text-purple-400/50 hover:text-purple-400 transition-colors">
+            publish
+          </a>
+          <form action="/auth/signout" method="post">
+            <button
+              type="submit"
+              className="text-[12px] text-neutral-600 hover:text-neutral-400 transition-colors"
+            >
+              exit
+            </button>
+          </form>
+        </div>
       </header>
 
       <div className="flex relative z-10" style={{ minHeight: 'calc(100vh - 49px)' }}>
