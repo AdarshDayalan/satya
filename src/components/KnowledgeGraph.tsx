@@ -627,15 +627,15 @@ export default function KnowledgeGraph({
         if (node && node === dragNode.current) {
           const dx = Math.abs((mouse.current.x - pan.current.x) / zoom.current - node.x!)
           const dy = Math.abs((mouse.current.y - pan.current.y) / zoom.current - node.y!)
-          if (dx < 2 && dy < 2) {
-            // If node has hidden children, expand it
+          if (dx < 5 && dy < 5) {
+            // Expand hidden children if any
             const hidden = hiddenChildCountRef.current.get(node.id)
             if (hidden && hidden > 0) {
               toggleExpandRef.current(node.id)
-            } else if (onNodeClickRef.current) {
+            }
+            // Always open side panel on click
+            if (onNodeClickRef.current) {
               onNodeClickRef.current(node.id)
-            } else {
-              router.push(`/nodes/${node.id}`)
             }
           }
         }

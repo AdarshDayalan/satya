@@ -2,11 +2,11 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
+import { useSelection } from './SelectionContext'
 import ProcessingQueue from './ProcessingQueue'
 import SpacesPanel from './SpacesPanel'
 import KnowledgeGraph from './KnowledgeGraph'
 import SidePanel from './SidePanel'
-import { useSelection } from './SelectionContext'
 
 type NavKey = 'home' | 'graph' | 'files' | 'publish'
 
@@ -115,6 +115,8 @@ export default function AppShell({ children, filesPanel, headerActions, graphDat
               edges={graphData.edges}
               folders={graphData.folders}
               folderNodes={graphData.folderNodes}
+              onNodeClick={(id) => select('node', id)}
+              fullscreen
             />
           </div>
         ) : activeNav === 'files' ? (
