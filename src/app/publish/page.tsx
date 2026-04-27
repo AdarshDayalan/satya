@@ -47,6 +47,7 @@ export default async function PublishPage() {
       <main className="max-w-2xl mx-auto px-4 py-10 relative z-10">
         <PublishManager
           profile={profile}
+          userEmail={user.email ?? ''}
           nodes={nodes ?? []}
           folders={folders ?? []}
           publishedNodeIds={publishedNodeIds}

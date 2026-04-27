@@ -27,6 +27,17 @@ export default async function NodePage({ params }: { params: Promise<{ id: strin
     .select('id, relationship, strength, reason, from_node:nodes!edges_from_node_id_fkey(id, content, type)')
     .eq('to_node_id', id)
 
+  // Fetch the source input for this node
+  let sourceInput = null
+  if (node.input_id) {
+    const { data } = await supabase
+      .from('inputs')
+      .select('id, raw_content, source_type, source_metadata, source_url, created_at')
+      .eq('id', node.input_id)
+      .single()
+    sourceInput = data
+  }
+
   const connections = [
     ...(edgesFrom ?? []).map((e: Record<string, unknown>) => ({
       node: e.to_node as { id: string; content: string; type: string },
@@ -55,7 +66,7 @@ export default async function NodePage({ params }: { params: Promise<{ id: strin
       </header>
 
       <main className="max-w-xl mx-auto px-4 py-10 space-y-8 relative z-10">
-        <NodeDetail node={node} connections={connections} />
+        <NodeDetail node={node} connections={connections} sourceInput={sourceInput} />
       </main>
     </div>
   )

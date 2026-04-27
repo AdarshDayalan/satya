@@ -164,6 +164,8 @@ export default function InputBox() {
     setLoading(false)
   }
 
+  const [expanded, setExpanded] = useState(false)
+
   return (
     <div className="space-y-4">
       <form onSubmit={(e) => { e.preventDefault(); isUrlSource ? handlePreview() : handleSubmit() }}>
@@ -177,19 +179,42 @@ export default function InputBox() {
               if (error) setError(null)
               if (result) setResult(null)
               if (preview) setPreview(null)
+              // Auto-expand for journal writing
+              if (!expanded && e.target.value.includes('\n')) setExpanded(true)
             }}
-            placeholder="drop anything here..."
-            rows={2}
+            onKeyDown={(e) => {
+              // Cmd+Enter to submit
+              if (e.key === 'Enter' && e.metaKey) {
+                e.preventDefault()
+                isUrlSource ? handlePreview() : handleSubmit()
+              }
+            }}
+            placeholder={expanded ? "write freely — markdown supported..." : "drop anything here..."}
+            rows={expanded ? 8 : 2}
             disabled={loading || previewing}
-            className="w-full px-5 py-4 bg-white/[0.03] border border-white/[0.06] rounded-2xl text-white/90 placeholder-neutral-600 resize-none focus:outline-none focus:border-white/[0.12] transition-all text-[15px] leading-relaxed disabled:opacity-40"
-            style={{ minHeight: '5rem', overflow: 'hidden' }}
+            className={`w-full px-5 py-4 bg-white/[0.03] border border-white/[0.06] rounded-2xl text-white/90 placeholder-neutral-600 resize-none focus:outline-none focus:border-white/[0.12] transition-all text-[15px] leading-relaxed disabled:opacity-40 ${expanded ? 'font-mono text-[14px]' : ''}`}
+            style={{ minHeight: expanded ? '200px' : '5rem', overflow: 'hidden' }}
           />
         </div>
         <div className="flex items-center justify-between mt-3 px-1">
-          {isUrlSource && (
-            <span className={`text-[11px] font-medium ${sourceInfo.color} animate-fade-up`}>
-              {sourceInfo.label} detected
-            </span>
+          <div className="flex items-center gap-3">
+            {isUrlSource && (
+              <span className={`text-[11px] font-medium ${sourceInfo.color} animate-fade-up`}>
+                {sourceInfo.label} detected
+              </span>
+            )}
+            {!isUrlSource && (
+              <button
+                type="button"
+                onClick={() => setExpanded(!expanded)}
+                className="text-[11px] text-neutral-600 hover:text-neutral-400 transition-colors"
+              >
+                {expanded ? '↑ collapse' : '↓ expand to journal'}
+              </button>
+            )}
+          </div>
+          {expanded && !isUrlSource && (
+            <span className="text-[10px] text-neutral-700">markdown supported · ⌘Enter to process</span>
           )}
         </div>
         <div className="flex items-center justify-between mt-2 px-1">

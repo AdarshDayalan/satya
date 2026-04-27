@@ -30,31 +30,39 @@ const typeColors: Record<string, string> = {
   raw: 'text-neutral-500',
 }
 
+function generateSlug(email: string): string {
+  return email.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, 39) || 'user'
+}
+
 export default function PublishManager({
   profile: initialProfile,
+  userEmail,
   nodes,
   folders,
   publishedNodeIds: initialNodeIds,
   publishedFolderIds: initialFolderIds,
 }: {
   profile: Profile | null
+  userEmail: string
   nodes: Node[]
   folders: Folder[]
   publishedNodeIds: string[]
   publishedFolderIds: string[]
 }) {
-  const [slug, setSlug] = useState(initialProfile?.slug ?? '')
-  const [displayName, setDisplayName] = useState(initialProfile?.display_name ?? '')
+  const [slug, setSlug] = useState(initialProfile?.slug ?? generateSlug(userEmail))
+  const [displayName, setDisplayName] = useState(initialProfile?.display_name ?? userEmail.split('@')[0])
   const [bio, setBio] = useState(initialProfile?.bio ?? '')
   const [saving, setSaving] = useState(false)
   const [profileSaved, setProfileSaved] = useState(!!initialProfile)
   const [publishedNodes, setPublishedNodes] = useState<Set<string>>(new Set(initialNodeIds))
   const [publishedFolders, setPublishedFolders] = useState<Set<string>>(new Set(initialFolderIds))
   const [copied, setCopied] = useState(false)
+  const [saveError, setSaveError] = useState('')
   const router = useRouter()
 
   async function saveProfile() {
     setSaving(true)
+    setSaveError('')
     const res = await fetch('/api/profile', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -63,6 +71,9 @@ export default function PublishManager({
     if (res.ok) {
       setProfileSaved(true)
       router.refresh()
+    } else {
+      const data = await res.json()
+      setSaveError(data.error?.includes('slug') ? 'slug already taken — try another' : (data.error || 'failed to save'))
     }
     setSaving(false)
   }
@@ -167,6 +178,9 @@ export default function PublishManager({
               </button>
             )}
           </div>
+          {saveError && (
+            <p className="text-[12px] text-red-400/70">{saveError}</p>
+          )}
         </div>
       </div>
 

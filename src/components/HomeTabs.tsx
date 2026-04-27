@@ -9,6 +9,7 @@ interface Node {
   id: string
   content: string
   type: string
+  input_id: string | null
   created_at: string
 }
 
@@ -32,6 +33,13 @@ interface FolderNode {
   node_id: string
 }
 
+interface Input {
+  id: string
+  raw_content: string
+  source_type: string
+  source_metadata: Record<string, unknown>
+}
+
 const TABS = [
   { key: 'graph', label: 'field' },
   { key: 'fragments', label: 'fragments' },
@@ -44,11 +52,13 @@ export default function HomeTabs({
   edges,
   folders,
   folderNodes,
+  inputs,
 }: {
   nodes: Node[]
   edges: Edge[]
   folders: Folder[]
   folderNodes: FolderNode[]
+  inputs: Input[]
 }) {
   const [tab, setTab] = useState<TabKey>('graph')
 
@@ -77,7 +87,7 @@ export default function HomeTabs({
       {tab === 'fragments' && (
         <div className="space-y-10">
           <FolderList folders={folders} />
-          <NodeList nodes={nodes} />
+          <NodeList nodes={nodes} inputs={inputs} />
         </div>
       )}
     </div>

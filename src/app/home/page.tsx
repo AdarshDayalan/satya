@@ -72,6 +72,7 @@ export default async function HomePage() {
             edges={edges ?? []}
             folders={folders ?? []}
             folderNodes={folderNodesData ?? []}
+            inputs={inputs ?? []}
           />
         </main>
       </div>

@@ -67,7 +67,7 @@ export default function SettingsModal({ open, onClose }: { open: boolean; onClos
             <select
               value={provider}
               onChange={(e) => { setProvider(e.target.value); setModel('') }}
-              className="w-full px-3 py-2 bg-white/[0.04] border border-white/[0.08] rounded-lg text-white/80 text-sm focus:outline-none focus:border-white/[0.15]"
+              className="w-full px-3 py-2 bg-[#111] border border-white/[0.08] rounded-lg text-white/80 text-sm focus:outline-none focus:border-white/[0.15] [&>option]:bg-[#111] [&>option]:text-white/80"
             >
               {PROVIDERS.map((p) => (
                 <option key={p.id} value={p.id}>{p.name}</option>
@@ -81,7 +81,7 @@ export default function SettingsModal({ open, onClose }: { open: boolean; onClos
             <select
               value={model || selectedProvider.models[0]}
               onChange={(e) => setModel(e.target.value)}
-              className="w-full px-3 py-2 bg-white/[0.04] border border-white/[0.08] rounded-lg text-white/80 text-sm focus:outline-none focus:border-white/[0.15]"
+              className="w-full px-3 py-2 bg-[#111] border border-white/[0.08] rounded-lg text-white/80 text-sm focus:outline-none focus:border-white/[0.15] [&>option]:bg-[#111] [&>option]:text-white/80"
             >
               {selectedProvider.models.map((m) => (
                 <option key={m} value={m}>{m}</option>

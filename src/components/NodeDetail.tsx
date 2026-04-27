@@ -33,12 +33,32 @@ interface Connection {
   edgeId: string
 }
 
+const SOURCE_CONFIG: Record<string, { label: string; color: string }> = {
+  journal: { label: 'Journal', color: 'text-white/50' },
+  youtube: { label: 'YouTube', color: 'text-red-400' },
+  instagram: { label: 'Instagram', color: 'text-pink-400' },
+  article: { label: 'Article', color: 'text-blue-400' },
+  research_paper: { label: 'Paper', color: 'text-green-400' },
+  reddit: { label: 'Reddit', color: 'text-orange-400' },
+  pubmed: { label: 'PubMed', color: 'text-cyan-400' },
+}
+
+interface SourceInput {
+  id: string
+  raw_content: string
+  source_type: string
+  source_metadata: Record<string, unknown>
+  source_url?: string
+  created_at: string
+}
+
 interface NodeDetailProps {
   node: { id: string; content: string; type: string; created_at: string; input_id: string | null }
   connections: Connection[]
+  sourceInput?: SourceInput | null
 }
 
-export default function NodeDetail({ node, connections }: NodeDetailProps) {
+export default function NodeDetail({ node, connections, sourceInput }: NodeDetailProps) {
   const router = useRouter()
   const [editing, setEditing] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -87,6 +107,42 @@ export default function NodeDetail({ node, connections }: NodeDetailProps) {
           {new Date(node.created_at).toLocaleDateString()}
         </p>
       </div>
+
+      {/* Source context */}
+      {sourceInput && (
+        <div className="space-y-2">
+          <h2 className="text-[11px] font-medium text-neutral-600 uppercase tracking-widest px-1">
+            Source
+          </h2>
+          <Link
+            href={`/inputs/${sourceInput.id}`}
+            className="block bg-white/[0.02] border border-white/[0.04] rounded-xl px-4 py-3 hover:bg-white/[0.04] transition-colors space-y-2"
+          >
+            <div className="flex items-center gap-2">
+              <span className={`text-[11px] font-medium ${(SOURCE_CONFIG[sourceInput.source_type] || SOURCE_CONFIG.journal).color}`}>
+                {(SOURCE_CONFIG[sourceInput.source_type] || SOURCE_CONFIG.journal).label}
+              </span>
+              {typeof sourceInput.source_metadata?.title === 'string' && (
+                <>
+                  <span className="text-neutral-800">·</span>
+                  <span className="text-[12px] text-white/70 font-medium truncate">
+                    {sourceInput.source_metadata.title}
+                  </span>
+                </>
+              )}
+            </div>
+            {sourceInput.source_url && (
+              <p className="text-[11px] text-blue-400/50 truncate">{sourceInput.source_url}</p>
+            )}
+            <p className="text-[13px] text-white/50 leading-relaxed line-clamp-3 whitespace-pre-wrap">
+              {sourceInput.raw_content}
+            </p>
+            <p className="text-[10px] text-neutral-700">
+              {new Date(sourceInput.created_at).toLocaleDateString()}
+            </p>
+          </Link>
+        </div>
+      )}
 
       {Object.keys(grouped).length > 0 ? (
         <div className="space-y-6">

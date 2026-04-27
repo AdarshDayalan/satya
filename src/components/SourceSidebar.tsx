@@ -2,6 +2,9 @@
 
 import Link from 'next/link'
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
+import EditModal from './EditModal'
+import ConfirmDialog from './ConfirmDialog'
 
 interface Input {
   id: string
@@ -23,10 +26,31 @@ const SOURCE_CONFIG: Record<string, { label: string; color: string }> = {
 }
 
 export default function SourceSidebar({ inputs }: { inputs: Input[] }) {
+  const router = useRouter()
   const [filter, setFilter] = useState<string | null>(null)
+  const [editingInput, setEditingInput] = useState<Input | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
 
   const sourceTypes = [...new Set(inputs.map((i) => i.source_type || 'journal'))]
   const filtered = filter ? inputs.filter((i) => (i.source_type || 'journal') === filter) : inputs
+
+  async function handleEdit(content: string) {
+    if (!editingInput) return
+    await fetch(`/api/inputs/${editingInput.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ raw_content: content }),
+    })
+    setEditingInput(null)
+    router.refresh()
+  }
+
+  async function handleDelete() {
+    if (!deletingId) return
+    await fetch(`/api/inputs/${deletingId}`, { method: 'DELETE' })
+    setDeletingId(null)
+    router.refresh()
+  }
 
   return (
     <aside className="w-64 shrink-0 border-r border-white/[0.04] bg-white/[0.01] overflow-y-auto">
@@ -74,22 +98,44 @@ export default function SourceSidebar({ inputs }: { inputs: Input[] }) {
               input.raw_content.slice(0, 60) + (input.raw_content.length > 60 ? '…' : '')
 
             return (
-              <Link
-                key={input.id}
-                href={`/inputs/${input.id}`}
-                className="block px-3 py-2.5 rounded-lg hover:bg-white/[0.04] transition-colors group"
-              >
-                <p className="text-[13px] text-white/70 line-clamp-2 leading-snug group-hover:text-white/90 transition-colors">
-                  {title}
-                </p>
-                <div className="flex items-center gap-2 mt-1.5">
-                  <span className={`text-[10px] ${config.color}`}>{config.label}</span>
-                  <span className="text-neutral-800">·</span>
-                  <span className="text-[10px] text-neutral-700">
-                    {new Date(input.created_at).toLocaleDateString()}
-                  </span>
+              <div key={input.id} className="group relative">
+                <Link
+                  href={`/inputs/${input.id}`}
+                  className="block px-3 py-2.5 rounded-lg hover:bg-white/[0.04] transition-colors"
+                >
+                  <p className="text-[13px] text-white/70 line-clamp-2 leading-snug group-hover:text-white/90 transition-colors pr-10">
+                    {title}
+                  </p>
+                  <div className="flex items-center gap-2 mt-1.5">
+                    <span className={`text-[10px] ${config.color}`}>{config.label}</span>
+                    <span className="text-neutral-800">·</span>
+                    <span className="text-[10px] text-neutral-700">
+                      {new Date(input.created_at).toLocaleDateString()}
+                    </span>
+                  </div>
+                </Link>
+                {/* Edit/Delete buttons */}
+                <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); setEditingInput(input) }}
+                    className="p-1 rounded text-neutral-600 hover:text-white/70 hover:bg-white/[0.06] transition-all"
+                    title="Edit"
+                  >
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5">
+                      <path d="M7 2l3 3-7 7H0v-3z" />
+                    </svg>
+                  </button>
+                  <button
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); setDeletingId(input.id) }}
+                    className="p-1 rounded text-neutral-600 hover:text-red-400 hover:bg-red-400/10 transition-all"
+                    title="Delete"
+                  >
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5">
+                      <path d="M2 2l8 8M10 2l-8 8" />
+                    </svg>
+                  </button>
                 </div>
-              </Link>
+              </div>
             )
           })}
           {filtered.length === 0 && (
@@ -97,6 +143,22 @@ export default function SourceSidebar({ inputs }: { inputs: Input[] }) {
           )}
         </div>
       </div>
+
+      <EditModal
+        isOpen={!!editingInput}
+        onClose={() => setEditingInput(null)}
+        onSave={handleEdit}
+        title="Edit source"
+        initialValue={editingInput?.raw_content || ''}
+      />
+
+      <ConfirmDialog
+        isOpen={!!deletingId}
+        onClose={() => setDeletingId(null)}
+        onConfirm={handleDelete}
+        title="Delete source"
+        message="This will permanently delete this source and all nodes extracted from it."
+      />
     </aside>
   )
 }

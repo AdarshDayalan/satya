@@ -24,7 +24,7 @@ export default function ActionMenu({ actions }: { actions: Action[] }) {
     <div ref={ref} className="relative">
       <button
         onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpen(!open) }}
-        className="p-1 rounded-md text-neutral-600 hover:text-neutral-300 hover:bg-white/[0.05] transition-all opacity-0 group-hover:opacity-100"
+        className="p-1 rounded-md text-neutral-600 hover:text-neutral-300 hover:bg-white/[0.05] transition-all"
       >
         <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
           <circle cx="8" cy="3" r="1.5" />
