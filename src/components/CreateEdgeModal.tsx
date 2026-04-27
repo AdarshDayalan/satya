@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import Portal from './Portal'
 
 const RELATIONSHIP_TYPES = ['supports', 'contradicts', 'refines', 'example_of', 'causes', 'similar']
 
@@ -50,6 +51,7 @@ export default function CreateEdgeModal({
   if (!open) return null
 
   return (
+    <Portal>
     <div className="fixed inset-0 z-[100] flex items-center justify-center">
       <div className="fixed inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
       <div className="relative z-[101] bg-[#0a0a0a] border border-white/[0.08] rounded-2xl w-full max-w-md mx-4 p-6 space-y-4 shadow-2xl">
@@ -137,5 +139,6 @@ export default function CreateEdgeModal({
         </div>
       </div>
     </div>
+    </Portal>
   )
 }

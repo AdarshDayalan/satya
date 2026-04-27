@@ -1,44 +1,23 @@
-export const EXTRACT_IDEAS_PROMPT = `You are an AI research distiller building a personal knowledge graph of truths and beliefs.
-
-Given raw input, extract meaning nodes at TWO levels:
-
-1. **Beliefs** (type: "concept") — core truths, convictions, or recurring principles that the input supports or reveals. These are NOT categories or labels — they are claims about reality that evidence points toward. They should be statements you could argue for or against.
-   - GOOD: "Detachment from material things is the path to freedom" — this is a truth claim
-   - GOOD: "Modern medicine treats symptoms instead of root causes" — this is a belief with evidence
-   - BAD: "Osho" — this is just a name, not a truth
-   - BAD: "Health" — this is just a category
-   - BAD: "Seed oil hypothesis" — this is a label, not a claim
-
-2. **Ideas** (type: "idea") — specific atomic claims, evidence, or arguments from this text that support or challenge the bigger beliefs.
-
-Return valid JSON only, no markdown fences.
+export const EXTRACT_IDEAS_PROMPT = `Extract the core truths from this text into a knowledge graph.
 
 Input:
 {{raw_content}}
 
-Return:
+Return JSON:
 {
-  "summary": "...",
-  "nodes": [
-    {
-      "content": "...",
-      "type": "concept | idea | question"
-    }
-  ]
+  "summary": "one line",
+  "nodes": [{ "content": "...", "type": "concept | idea | question" }]
 }
 
 Rules:
-- Extract as many or as few nodes as the context warrants. Focus on what matters — the meaningful truths and ideas present, regardless of text length or density.
-- Only extract concept nodes when the text genuinely reveals a core truth or belief. Don't force it.
-- Concept nodes must be truth claims — statements that can be supported or challenged, not labels or names.
-- Idea nodes should be atomic, specific claims — not vague summaries.
-- Avoid duplicate ideas.
-- Preserve uncertainty — don't state things as fact if the source didn't.
-- Do not exaggerate claims.`
+- Keep node content SHORT — max 8-10 words. Think graph labels, not sentences.
+- "concept" = a core belief or truth claim (e.g. "Detachment leads to freedom"). NOT names or categories.
+- "idea" = a specific claim or piece of evidence (e.g. "Seed oils cause inflammation").
+- "question" = an unresolved question raised by the text.
+- Only extract what matters. Merge similar ideas. Fewer strong nodes > many weak ones.
+- If two ideas say roughly the same thing, keep the sharper one.`
 
-export const DETECT_RELATIONSHIPS_PROMPT = `You are building an organic knowledge graph. Be highly selective — only connect ideas that genuinely illuminate each other.
-
-Given a new node and nearby existing nodes, decide if any have a STRONG, specific relationship.
+export const DETECT_RELATIONSHIPS_PROMPT = `Given a new node and nearby nodes, find meaningful connections. Be very selective.
 
 New node:
 {{new_node}}
@@ -46,49 +25,36 @@ New node:
 Existing nodes:
 {{nearby_nodes}}
 
-Return valid JSON only, no markdown fences:
+Return JSON:
 {
-  "relationships": [
-    {
-      "existing_node_id": "...",
-      "relationship": "similar | supports | contradicts | refines | example_of | causes | none",
-      "strength": 0.0,
-      "reason": "..."
-    }
-  ]
+  "relationships": [{
+    "existing_node_id": "...",
+    "relationship": "supports | contradicts | refines | example_of | causes | similar | none",
+    "strength": 0.0,
+    "reason": "3-5 words"
+  }]
 }
 
 Rules:
-- Most nodes should NOT be connected. Default to "none".
-- Only connect ideas that share a specific, articulable intellectual link.
-- Do NOT connect ideas just because they appear in the same text or share a broad topic.
-- "supports" = one idea provides evidence or reasoning for the other.
-- "contradicts" = they make opposing claims about the same thing.
-- "refines" = one narrows, deepens, or clarifies the other.
-- "example_of" = one is a concrete instance of the other's abstract claim.
-- "causes" = one directly leads to or produces the other.
-- "similar" = they make nearly the same claim in different words. Use sparingly.
-- Never use "related" — if you can't name a specific relationship type, use "none".
-- Strength 0.8+ = strong, clear link. 0.6-0.8 = moderate. Below 0.6 = probably "none".`
+- Default to "none". Most nodes should NOT connect.
+- Only connect when there's a clear intellectual link, not topic overlap.
+- Strength 0.8+ = strong. Below 0.7 = "none".
+- Keep reason to 3-5 words max.`
 
-export const SUGGEST_FOLDER_PROMPT = `You are identifying emergent themes in a knowledge graph.
-
-Given these connected nodes, decide whether they form a meaningful cluster.
+export const SUGGEST_FOLDER_PROMPT = `Do these connected nodes form a meaningful theme?
 
 Nodes:
 {{cluster_nodes}}
 
-Return valid JSON only, no markdown fences:
+Return JSON:
 {
   "should_create_folder": true,
-  "folder_name": "...",
-  "description": "...",
+  "folder_name": "2-4 words",
+  "description": "one line",
   "confidence": 0.0
 }
 
 Rules:
-- Only suggest a folder if the theme is clear.
-- Folder names should be short and natural.
-- Do not create generic folders like "Health" or "Food".
-- Prefer specific emergent themes.
+- Only if the theme is specific and clear. No generic names like "Health".
+- folder_name: 2-4 words max.
 - If unclear, return should_create_folder false.`

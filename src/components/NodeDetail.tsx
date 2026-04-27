@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import Portal from './Portal'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import ActionMenu from './ActionMenu'
@@ -277,7 +278,8 @@ export default function NodeDetail({ node, connections, sourceInput, allNodes }:
 
       {/* Edit edge modal */}
       {editingEdge && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center">
+        <Portal>
+          <div className="fixed inset-0 z-[100] flex items-center justify-center">
           <div className="fixed inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setEditingEdge(null)} />
           <div className="relative z-[101] bg-[#0a0a0a] border border-white/[0.08] rounded-2xl w-full max-w-sm mx-4 p-6 space-y-4 shadow-2xl">
             <h2 className="text-sm font-medium text-white/80">Edit Connection</h2>
@@ -310,6 +312,7 @@ export default function NodeDetail({ node, connections, sourceInput, allNodes }:
             </div>
           </div>
         </div>
+        </Portal>
       )}
 
       <EditModal isOpen={editing} onClose={() => setEditing(false)} onSave={handleSave} title="Edit node" initialValue={node.content} />

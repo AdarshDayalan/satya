@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import Portal from './Portal'
 
 interface EditModalProps {
   isOpen: boolean
@@ -30,7 +31,8 @@ export default function EditModal({ isOpen, onClose, onSave, title, initialValue
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
+    <Portal>
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm" onClick={onClose}>
       <div
         className="w-full max-w-lg bg-neutral-900 border border-white/[0.08] rounded-2xl p-6 space-y-4 animate-fade-up"
         onClick={(e) => e.stopPropagation()}
@@ -63,5 +65,6 @@ export default function EditModal({ isOpen, onClose, onSave, title, initialValue
         </div>
       </div>
     </div>
+    </Portal>
   )
 }

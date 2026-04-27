@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import Portal from './Portal'
 
 const PROVIDERS = [
   { id: 'gemini', name: 'Google Gemini', models: ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash'], keyUrl: 'https://aistudio.google.com/apikey', keyLabel: 'aistudio.google.com' },
@@ -52,7 +53,8 @@ export default function SettingsModal({ open, onClose }: { open: boolean; onClos
   const selectedProvider = PROVIDERS.find((p) => p.id === provider) || PROVIDERS[0]
 
   return (
-    <div className="fixed top-0 left-0 right-0 bottom-0 z-[100] flex items-center justify-center overflow-y-auto">
+    <Portal>
+    <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto">
       <div className="fixed inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
       <div className="relative z-[101] bg-[#0a0a0a] border border-white/[0.08] rounded-2xl w-full max-w-md mx-4 my-auto p-6 space-y-5 shadow-2xl">
         <div className="flex items-center justify-between">
@@ -126,5 +128,6 @@ export default function SettingsModal({ open, onClose }: { open: boolean; onClos
         </div>
       </div>
     </div>
+    </Portal>
   )
 }

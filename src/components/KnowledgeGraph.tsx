@@ -65,11 +65,13 @@ export default function KnowledgeGraph({
   edges,
   folders,
   folderNodes,
+  fullscreen = false,
 }: {
   nodes: GraphNode[]
   edges: GraphEdge[]
   folders: Folder[]
   folderNodes: FolderNode[]
+  fullscreen?: boolean
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const animRef = useRef<number>(0)
@@ -592,17 +594,30 @@ export default function KnowledgeGraph({
   }
 
   return (
-    <div className="relative">
+    <div className={`relative ${fullscreen ? 'h-full' : ''}`}>
       <canvas
         ref={canvasRef}
-        className="w-full rounded-2xl border border-white/[0.04] bg-[#050505] cursor-grab"
-        style={{ height: '70vh' }}
+        className={`w-full bg-[#050505] cursor-grab ${fullscreen ? 'rounded-none border-0' : 'rounded-2xl border border-white/[0.04]'}`}
+        style={{ height: fullscreen ? '100%' : '70vh' }}
       />
 
       {/* Hint */}
       <div className="absolute top-3 left-3 text-[10px] text-neutral-700">
         shift + drag to connect
       </div>
+
+      {/* Fullscreen toggle */}
+      {!fullscreen && (
+        <a
+          href="/graph"
+          className="absolute top-3 right-3 p-1.5 rounded-lg text-neutral-600 hover:text-white bg-white/[0.04] border border-white/[0.06] hover:bg-white/[0.08] transition-all"
+          title="Open full view"
+        >
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5">
+            <path d="M1 5V1h4M9 1h4v4M13 9v4H9M5 13H1V9" />
+          </svg>
+        </a>
+      )}
 
       {/* Tooltip */}
       {tooltip && !pendingConnection && (
