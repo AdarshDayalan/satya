@@ -129,7 +129,7 @@ export async function POST(req: Request) {
         })
 
         const candidates = (nearbyNodes ?? []).filter(
-          (n: { id: string }) => !createdNodes.some((c) => c.id === n.id)
+          (n: { id: string }) => n.id !== savedNode.id
         )
 
         if (candidates.length > 0) {

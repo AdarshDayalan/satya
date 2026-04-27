@@ -97,7 +97,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
         })
 
         const candidates = (nearbyNodes ?? []).filter(
-          (n: { id: string }) => !createdNodes.some((c) => c.id === n.id)
+          (n: { id: string }) => n.id !== savedNode.id
         )
 
         if (candidates.length > 0) {
