@@ -53,6 +53,13 @@ const REL_COLORS: Record<string, string> = {
   related: '#525252',
 }
 
+const REL_TYPES = ['supports', 'contradicts', 'refines', 'example_of', 'causes', 'similar']
+
+interface PendingConnection {
+  fromNode: GraphNode
+  toNode: GraphNode
+}
+
 export default function KnowledgeGraph({
   nodes,
   edges,
@@ -81,22 +88,27 @@ export default function KnowledgeGraph({
   const panStart = useRef({ x: 0, y: 0 })
   const [tooltip, setTooltip] = useState<{ x: number; y: number; content: string; type: string } | null>(null)
 
+  // Connecting state — shift+drag from node to node
+  const isConnecting = useRef(false)
+  const connectFrom = useRef<GraphNode | null>(null)
+  const connectMouseWorld = useRef({ x: 0, y: 0 })
+  const [pendingConnection, setPendingConnection] = useState<PendingConnection | null>(null)
+  const [connRelationship, setConnRelationship] = useState('supports')
+  const [connStrength, setConnStrength] = useState(0.8)
+  const [connSaving, setConnSaving] = useState(false)
+  const [connDetecting, setConnDetecting] = useState(false)
+
   // Build folder membership map
   const folderMap = useRef<Map<string, string[]>>(new Map())
-  const nodeFolderMap = useRef<Map<string, string>>(new Map())
 
   useEffect(() => {
     const fm = new Map<string, string[]>()
-    const nfm = new Map<string, string>()
     for (const fn of folderNodes) {
       if (!fm.has(fn.folder_id)) fm.set(fn.folder_id, [])
       fm.get(fn.folder_id)!.push(fn.node_id)
-      const folder = folders.find(f => f.id === fn.folder_id)
-      if (folder) nfm.set(fn.node_id, folder.name)
     }
     folderMap.current = fm
-    nodeFolderMap.current = nfm
-  }, [folders, folderNodes])
+  }, [folderNodes])
 
   // Count connections per node
   const connectionCount = useCallback(() => {
@@ -134,21 +146,6 @@ export default function KnowledgeGraph({
       }
     })
   }, [nodes, connectionCount])
-
-  // Screen to world coords
-  const screenToWorld = useCallback((sx: number, sy: number) => {
-    return {
-      x: (sx - pan.current.x) / zoom.current,
-      y: (sy - pan.current.y) / zoom.current,
-    }
-  }, [])
-
-  const worldToScreen = useCallback((wx: number, wy: number) => {
-    return {
-      x: wx * zoom.current + pan.current.x,
-      y: wy * zoom.current + pan.current.y,
-    }
-  }, [])
 
   // Find cluster centers for folder labels
   const getClusterCenters = useCallback(() => {
@@ -201,12 +198,8 @@ export default function KnowledgeGraph({
       for (let i = 0; i < gn.length; i++) {
         const a = gn[i]
         if (a === dragging) continue
-
-        // Center gravity
         a.vx! += (w / 2 / zoom.current - pan.current.x / zoom.current - a.x!) * 0.0003
         a.vy! += (h / 2 / zoom.current - pan.current.y / zoom.current - a.y!) * 0.0003
-
-        // Repulsion
         for (let j = i + 1; j < gn.length; j++) {
           const b = gn[j]
           if (b === dragging) continue
@@ -221,12 +214,10 @@ export default function KnowledgeGraph({
         }
       }
 
-      // Edge attraction — stronger edges pull harder
       for (const edge of edges) {
         const a = nodeMap.get(edge.from_node_id)
         const b = nodeMap.get(edge.to_node_id)
-        if (!a || !b) continue
-        if (a === dragging || b === dragging) continue
+        if (!a || !b || a === dragging || b === dragging) continue
         const dx = b.x! - a.x!
         const dy = b.y! - a.y!
         const dist = Math.sqrt(dx * dx + dy * dy) || 1
@@ -238,7 +229,6 @@ export default function KnowledgeGraph({
         b.vy! -= (dy / dist) * force
       }
 
-      // Apply velocities
       for (const n of gn) {
         if (n === dragging) continue
         n.vx! *= 0.9
@@ -256,8 +246,6 @@ export default function KnowledgeGraph({
         }
         if (count < 2) continue
         cx /= count; cy /= count
-
-        // Calculate cluster radius
         let maxDist = 0
         for (const nid of nodeIds) {
           const node = nodeMap.get(nid)
@@ -266,7 +254,6 @@ export default function KnowledgeGraph({
             if (d > maxDist) maxDist = d
           }
         }
-
         const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, maxDist + 60)
         grad.addColorStop(0, 'rgba(120, 100, 200, 0.04)')
         grad.addColorStop(0.7, 'rgba(120, 100, 200, 0.015)')
@@ -282,21 +269,16 @@ export default function KnowledgeGraph({
         const a = nodeMap.get(edge.from_node_id)
         const b = nodeMap.get(edge.to_node_id)
         if (!a || !b) continue
-
         const color = REL_COLORS[edge.relationship] || REL_COLORS.related
         const isContradiction = edge.relationship === 'contradicts'
         const isHighlighted = hovered && (hovered.id === edge.from_node_id || hovered.id === edge.to_node_id)
-
         const baseAlpha = isHighlighted ? 0.6 : 0.08 + edge.strength * 0.25
         const pulse = Math.sin(time.current * 2 + edge.strength * 10) * 0.05
         ctx.globalAlpha = baseAlpha + pulse
-
         ctx.beginPath()
         ctx.strokeStyle = color
         ctx.lineWidth = (0.5 + edge.strength * 2) * (isHighlighted ? 1.5 : 1)
-
         if (isContradiction) {
-          // Dashed vibrating line
           ctx.setLineDash([4, 4])
           const vibrate = Math.sin(time.current * 8) * 2
           ctx.moveTo(a.x! + vibrate, a.y!)
@@ -308,8 +290,6 @@ export default function KnowledgeGraph({
         }
         ctx.stroke()
         ctx.setLineDash([])
-
-        // Traveling particle
         if (!isContradiction) {
           const t = (time.current * 0.4 + edge.strength) % 1
           const px = a.x! + (b.x! - a.x!) * t
@@ -322,22 +302,45 @@ export default function KnowledgeGraph({
         }
       }
 
+      // --- Draw connecting line (shift+drag) ---
+      if (isConnecting.current && connectFrom.current) {
+        ctx.globalAlpha = 0.6
+        ctx.beginPath()
+        ctx.strokeStyle = '#a78bfa'
+        ctx.lineWidth = 2
+        ctx.setLineDash([6, 4])
+        ctx.moveTo(connectFrom.current.x!, connectFrom.current.y!)
+        ctx.lineTo(connectMouseWorld.current.x, connectMouseWorld.current.y)
+        ctx.stroke()
+        ctx.setLineDash([])
+        // Draw arrow head
+        const dx = connectMouseWorld.current.x - connectFrom.current.x!
+        const dy = connectMouseWorld.current.y - connectFrom.current.y!
+        const angle = Math.atan2(dy, dx)
+        ctx.beginPath()
+        ctx.moveTo(connectMouseWorld.current.x, connectMouseWorld.current.y)
+        ctx.lineTo(connectMouseWorld.current.x - 10 * Math.cos(angle - 0.4), connectMouseWorld.current.y - 10 * Math.sin(angle - 0.4))
+        ctx.moveTo(connectMouseWorld.current.x, connectMouseWorld.current.y)
+        ctx.lineTo(connectMouseWorld.current.x - 10 * Math.cos(angle + 0.4), connectMouseWorld.current.y - 10 * Math.sin(angle + 0.4))
+        ctx.stroke()
+        ctx.globalAlpha = 1
+      }
+
       // --- Draw nodes ---
       ctx.globalAlpha = 1
       for (const n of gn) {
         const color = TYPE_COLORS[n.type] || TYPE_COLORS.raw
         const r = n.radius || 4
         const isHovered = hovered === n
+        const isConnectSource = connectFrom.current === n
 
-        // Recency glow — newer nodes glow brighter
         const age = (Date.now() - new Date(n.created_at).getTime()) / (1000 * 60 * 60 * 24)
         const recencyAlpha = Math.max(0.02, 0.15 - age * 0.003)
 
-        // Outer glow
-        if (isHovered || recencyAlpha > 0.03) {
-          const glowR = isHovered ? r * 4 : r * 2.5
+        if (isHovered || isConnectSource || recencyAlpha > 0.03) {
+          const glowR = (isHovered || isConnectSource) ? r * 4 : r * 2.5
           const grad = ctx.createRadialGradient(n.x!, n.y!, r * 0.5, n.x!, n.y!, glowR)
-          grad.addColorStop(0, color + (isHovered ? '40' : Math.round(recencyAlpha * 255).toString(16).padStart(2, '0')))
+          grad.addColorStop(0, color + ((isHovered || isConnectSource) ? '40' : Math.round(recencyAlpha * 255).toString(16).padStart(2, '0')))
           grad.addColorStop(1, color + '00')
           ctx.beginPath()
           ctx.arc(n.x!, n.y!, glowR, 0, Math.PI * 2)
@@ -345,14 +348,22 @@ export default function KnowledgeGraph({
           ctx.fill()
         }
 
-        // Core dot
         ctx.beginPath()
         ctx.arc(n.x!, n.y!, r, 0, Math.PI * 2)
         ctx.fillStyle = color
         ctx.globalAlpha = isHovered ? 1 : 0.85
         ctx.fill()
 
-        // Label — always show truncated text, brighter on hover
+        // Ring on connect source
+        if (isConnectSource) {
+          ctx.beginPath()
+          ctx.arc(n.x!, n.y!, r + 3, 0, Math.PI * 2)
+          ctx.strokeStyle = '#a78bfa'
+          ctx.lineWidth = 1.5
+          ctx.globalAlpha = 0.8
+          ctx.stroke()
+        }
+
         ctx.fillStyle = isHovered ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.45)'
         ctx.font = `${isHovered ? 11 : 9}px system-ui`
         ctx.textAlign = 'center'
@@ -360,7 +371,6 @@ export default function KnowledgeGraph({
         const maxLen = isHovered ? 50 : 25
         const label = n.content.length > maxLen ? n.content.slice(0, maxLen) + '…' : n.content
         ctx.fillText(label, n.x!, n.y! + r + 14)
-
         ctx.globalAlpha = 1
       }
 
@@ -382,7 +392,7 @@ export default function KnowledgeGraph({
 
     animate()
     return () => cancelAnimationFrame(animRef.current)
-  }, [init, edges, getClusterCenters, worldToScreen])
+  }, [init, edges, getClusterCenters])
 
   // Mouse handlers
   useEffect(() => {
@@ -403,6 +413,18 @@ export default function KnowledgeGraph({
     function onMouseMove(e: MouseEvent) {
       const rect = canvas!.getBoundingClientRect()
       mouse.current = { x: e.clientX - rect.left, y: e.clientY - rect.top }
+
+      // Connecting mode
+      if (isConnecting.current && connectFrom.current) {
+        connectMouseWorld.current = {
+          x: (mouse.current.x - pan.current.x) / zoom.current,
+          y: (mouse.current.y - pan.current.y) / zoom.current,
+        }
+        const target = findNode(e.clientX, e.clientY)
+        hoveredNode.current = target
+        canvas!.style.cursor = target && target !== connectFrom.current ? 'crosshair' : 'crosshair'
+        return
+      }
 
       if (isDragging.current && dragNode.current) {
         dragNode.current.x = (mouse.current.x - pan.current.x) / zoom.current
@@ -437,6 +459,16 @@ export default function KnowledgeGraph({
 
     function onMouseDown(e: MouseEvent) {
       const node = findNode(e.clientX, e.clientY)
+
+      // Shift+click on node = start connecting
+      if (e.shiftKey && node) {
+        isConnecting.current = true
+        connectFrom.current = node
+        connectMouseWorld.current = { x: node.x!, y: node.y! }
+        canvas!.style.cursor = 'crosshair'
+        return
+      }
+
       if (node) {
         dragNode.current = node
         isDragging.current = true
@@ -449,8 +481,35 @@ export default function KnowledgeGraph({
     }
 
     function onMouseUp(e: MouseEvent) {
+      // Finish connecting
+      if (isConnecting.current && connectFrom.current) {
+        const target = findNode(e.clientX, e.clientY)
+        if (target && target !== connectFrom.current) {
+          const fromN = connectFrom.current
+          const toN = target
+          setPendingConnection({ fromNode: fromN, toNode: toN })
+          // Auto-detect relationship
+          setConnDetecting(true)
+          fetch('/api/detect-relationship', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ from_content: fromN.content, to_content: toN.content }),
+          })
+            .then(r => r.json())
+            .then(data => {
+              setConnRelationship(data.relationship || 'supports')
+              setConnStrength(data.strength ?? 0.8)
+              setConnDetecting(false)
+            })
+            .catch(() => setConnDetecting(false))
+        }
+        isConnecting.current = false
+        connectFrom.current = null
+        canvas!.style.cursor = hoveredNode.current ? 'pointer' : 'grab'
+        return
+      }
+
       if (isDragging.current && dragNode.current) {
-        // If barely moved, treat as click → navigate
         const node = findNode(e.clientX, e.clientY)
         if (node && node === dragNode.current) {
           const dx = Math.abs((mouse.current.x - pan.current.x) / zoom.current - node.x!)
@@ -471,12 +530,9 @@ export default function KnowledgeGraph({
       const rect = canvas!.getBoundingClientRect()
       const mx = e.clientX - rect.left
       const my = e.clientY - rect.top
-
       const oldZoom = zoom.current
       const delta = e.deltaY > 0 ? 0.9 : 1.1
       zoom.current = Math.max(0.2, Math.min(5, zoom.current * delta))
-
-      // Zoom toward mouse position
       pan.current.x = mx - (mx - pan.current.x) * (zoom.current / oldZoom)
       pan.current.y = my - (my - pan.current.y) * (zoom.current / oldZoom)
     }
@@ -486,6 +542,8 @@ export default function KnowledgeGraph({
       dragNode.current = null
       isDragging.current = false
       isPanning.current = false
+      isConnecting.current = false
+      connectFrom.current = null
       setTooltip(null)
     }
 
@@ -502,7 +560,27 @@ export default function KnowledgeGraph({
       canvas.removeEventListener('wheel', onWheel)
       canvas.removeEventListener('mouseleave', onMouseLeave)
     }
-  }, [router, screenToWorld])
+  }, [router])
+
+  async function handleConnect() {
+    if (!pendingConnection) return
+    setConnSaving(true)
+    await fetch('/api/edges', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        from_node_id: pendingConnection.fromNode.id,
+        to_node_id: pendingConnection.toNode.id,
+        relationship: connRelationship,
+        strength: connStrength,
+      }),
+    })
+    setConnSaving(false)
+    setPendingConnection(null)
+    setConnRelationship('supports')
+    setConnStrength(0.8)
+    router.refresh()
+  }
 
   if (nodes.length === 0) {
     return (
@@ -521,8 +599,13 @@ export default function KnowledgeGraph({
         style={{ height: '70vh' }}
       />
 
+      {/* Hint */}
+      <div className="absolute top-3 left-3 text-[10px] text-neutral-700">
+        shift + drag to connect
+      </div>
+
       {/* Tooltip */}
-      {tooltip && (
+      {tooltip && !pendingConnection && (
         <div
           className="absolute pointer-events-none bg-neutral-900/95 border border-white/[0.08] rounded-xl px-3 py-2 max-w-[280px] backdrop-blur-sm animate-fade-up"
           style={{
@@ -535,26 +618,79 @@ export default function KnowledgeGraph({
         </div>
       )}
 
+      {/* Inline connection panel — appears over graph */}
+      {pendingConnection && (
+        <div className="absolute top-3 right-3 w-56 bg-[#0a0a0a]/95 border border-white/[0.08] rounded-xl p-3 space-y-2 backdrop-blur-sm shadow-2xl z-10">
+          <p className="text-[11px] text-white/60 leading-snug truncate">
+            <span className="text-purple-400">
+              {pendingConnection.fromNode.content.slice(0, 30)}...
+            </span>
+          </p>
+          <p className="text-[10px] text-neutral-600 text-center">connects to</p>
+          <p className="text-[11px] text-white/60 leading-snug truncate">
+            <span className="text-purple-400">
+              {pendingConnection.toNode.content.slice(0, 30)}...
+            </span>
+          </p>
+
+          {connDetecting ? (
+            <p className="text-[10px] text-purple-400/60 animate-pulse text-center py-1">detecting relationship...</p>
+          ) : (
+            <>
+              <select
+                value={connRelationship}
+                onChange={(e) => setConnRelationship(e.target.value)}
+                className="w-full px-2 py-1 bg-[#111] border border-white/[0.08] rounded text-white/80 text-[11px] focus:outline-none [&>option]:bg-[#111]"
+              >
+                {REL_TYPES.map((r) => (
+                  <option key={r} value={r}>{r.replace('_', ' ')}</option>
+                ))}
+              </select>
+
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] text-neutral-600 shrink-0">{connStrength.toFixed(1)}</span>
+                <input
+                  type="range" min="0.1" max="1.0" step="0.1"
+                  value={connStrength}
+                  onChange={(e) => setConnStrength(parseFloat(e.target.value))}
+                  className="flex-1 accent-purple-400"
+                />
+              </div>
+            </>
+          )}
+
+          <div className="flex gap-1.5">
+            <button
+              onClick={() => { setPendingConnection(null); setConnRelationship('supports'); setConnStrength(0.8) }}
+              className="flex-1 px-2 py-1 text-[10px] text-neutral-500 hover:text-white transition-colors"
+            >
+              cancel
+            </button>
+            <button
+              onClick={handleConnect}
+              disabled={connSaving || connDetecting}
+              className="flex-1 px-2 py-1 text-[10px] text-white/70 bg-purple-500/20 border border-purple-500/30 rounded hover:bg-purple-500/30 transition-all disabled:opacity-40"
+            >
+              {connSaving ? '...' : 'connect'}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Zoom controls */}
       <div className="absolute bottom-3 right-3 flex gap-1">
         <button
           onClick={() => { zoom.current = Math.min(5, zoom.current * 1.3) }}
           className="w-7 h-7 flex items-center justify-center text-neutral-600 hover:text-white bg-white/[0.04] border border-white/[0.06] rounded-lg text-[14px] transition-colors"
-        >
-          +
-        </button>
+        >+</button>
         <button
           onClick={() => { zoom.current = Math.max(0.2, zoom.current * 0.7) }}
           className="w-7 h-7 flex items-center justify-center text-neutral-600 hover:text-white bg-white/[0.04] border border-white/[0.06] rounded-lg text-[14px] transition-colors"
-        >
-          −
-        </button>
+        >−</button>
         <button
           onClick={() => { zoom.current = 1; pan.current = { x: 0, y: 0 } }}
           className="w-7 h-7 flex items-center justify-center text-neutral-600 hover:text-white bg-white/[0.04] border border-white/[0.06] rounded-lg text-[10px] transition-colors"
-        >
-          fit
-        </button>
+        >fit</button>
       </div>
     </div>
   )
