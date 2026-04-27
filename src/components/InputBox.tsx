@@ -16,7 +16,15 @@ export default function InputBox() {
   const [error, setError] = useState<string | null>(null)
   const [listening, setListening] = useState(false)
   const recognitionRef = useRef<SpeechRecognition | null>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
   const router = useRouter()
+
+  function autoResize() {
+    const ta = textareaRef.current
+    if (!ta) return
+    ta.style.height = 'auto'
+    ta.style.height = ta.scrollHeight + 'px'
+  }
 
   useEffect(() => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
@@ -96,44 +104,49 @@ export default function InputBox() {
 
   return (
     <div className="space-y-4">
-      <form onSubmit={handleSubmit} className="relative">
+      <form onSubmit={handleSubmit}>
         <div className="input-glow rounded-2xl">
           <textarea
+            ref={textareaRef}
             value={content}
             onChange={(e) => {
               setContent(e.target.value)
+              autoResize()
               if (error) setError(null)
               if (result) setResult(null)
             }}
             placeholder="drop anything here..."
-            rows={3}
+            rows={2}
             disabled={loading}
             className="w-full px-5 py-4 bg-white/[0.03] border border-white/[0.06] rounded-2xl text-white/90 placeholder-neutral-600 resize-none focus:outline-none focus:border-white/[0.12] transition-all text-[15px] leading-relaxed disabled:opacity-40"
+            style={{ minHeight: '5rem', maxHeight: '40vh', overflow: 'auto' }}
           />
         </div>
-        <button
-          type="button"
-          onClick={toggleListening}
-          disabled={loading || !recognitionRef.current}
-          className={`absolute bottom-3 left-3 px-3 py-1.5 text-xs font-medium rounded-lg border transition-all disabled:opacity-20 disabled:cursor-default ${
-            listening
-              ? 'text-red-400 bg-red-400/10 border-red-400/30 animate-pulse-soft'
-              : 'text-white/60 bg-white/[0.06] border-white/[0.06] hover:bg-white/[0.1] hover:text-white/90'
-          }`}
-        >
-          {listening ? '● stop' : '🎙 voice'}
-        </button>
-        <button
-          type="submit"
-          disabled={loading || !content.trim()}
-          className="absolute bottom-3 right-3 px-4 py-1.5 text-xs font-medium text-white/60 bg-white/[0.06] rounded-lg hover:bg-white/[0.1] hover:text-white/90 border border-white/[0.06] transition-all disabled:opacity-20 disabled:cursor-default"
-        >
-          {loading ? (
-            <span className="animate-pulse-soft">extracting meaning...</span>
-          ) : (
-            'process'
-          )}
-        </button>
+        <div className="flex items-center justify-between mt-3 px-1">
+          <button
+            type="button"
+            onClick={toggleListening}
+            disabled={loading || !recognitionRef.current}
+            className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-all disabled:opacity-20 disabled:cursor-default ${
+              listening
+                ? 'text-red-400 bg-red-400/10 border-red-400/30 animate-pulse-soft'
+                : 'text-white/60 bg-white/[0.06] border-white/[0.06] hover:bg-white/[0.1] hover:text-white/90'
+            }`}
+          >
+            {listening ? '● stop' : '🎙 voice'}
+          </button>
+          <button
+            type="submit"
+            disabled={loading || !content.trim()}
+            className="px-4 py-1.5 text-xs font-medium text-white/60 bg-white/[0.06] rounded-lg hover:bg-white/[0.1] hover:text-white/90 border border-white/[0.06] transition-all disabled:opacity-20 disabled:cursor-default"
+          >
+            {loading ? (
+              <span className="animate-pulse-soft">extracting meaning...</span>
+            ) : (
+              'process'
+            )}
+          </button>
+        </div>
       </form>
 
       {result && (
