@@ -5,6 +5,7 @@ import NodeList from '@/components/NodeList'
 import FolderList from '@/components/FolderList'
 import SourceSidebar from '@/components/SourceSidebar'
 import HomeTabs from '@/components/HomeTabs'
+import HeaderActions from '@/components/HeaderActions'
 
 export default async function HomePage() {
   const supabase = await createClient()
@@ -45,6 +46,7 @@ export default async function HomePage() {
           <a href="/publish" className="text-[12px] text-purple-400/50 hover:text-purple-400 transition-colors">
             publish
           </a>
+          <HeaderActions />
           <form action="/auth/signout" method="post">
             <button
               type="submit"

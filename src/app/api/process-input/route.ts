@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { getModel, generateEmbedding, extractJson } from '@/lib/gemini'
+import { getModel, generateEmbedding } from '@/lib/ai'
+import { getUserAIConfig } from '@/lib/ai-config'
+import type { Provider, AIModel } from '@/lib/ai'
 import {
   EXTRACT_IDEAS_PROMPT,
   DETECT_RELATIONSHIPS_PROMPT,
@@ -10,14 +12,12 @@ import { detectSource } from '@/lib/sources'
 import { extractContent } from '@/lib/extractors'
 
 async function generateJson(
-  model: ReturnType<typeof getModel>,
+  model: AIModel,
   prompt: string
 ): Promise<Record<string, unknown>> {
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      const result = await model.generateContent(prompt)
-      const text = result.response.text()
-      return extractJson(text)
+      return await model.generateJSON(prompt)
     } catch (err) {
       console.error(`[satya] JSON attempt ${attempt + 1} failed:`, err)
       if (attempt === 1) throw err
@@ -34,6 +34,17 @@ export async function POST(req: Request) {
 
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  // Get user's AI config
+  let aiConfig
+  try {
+    aiConfig = await getUserAIConfig(supabase, user.id)
+  } catch {
+    return NextResponse.json(
+      { error: 'No AI API key configured. Add your key in settings.' },
+      { status: 400 }
+    )
   }
 
   const { raw_content } = await req.json()
@@ -68,8 +79,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    const apiKey = process.env.GEMINI_API_KEY!
-    const model = getModel(apiKey)
+    const model = getModel(aiConfig.apiKey, aiConfig.provider as Provider, aiConfig.model)
 
     // Step 2: Extract meaning nodes (with retry)
     const prompt = EXTRACT_IDEAS_PROMPT.replace('{{raw_content}}', enrichedContent)
@@ -89,7 +99,7 @@ export async function POST(req: Request) {
     for (const node of extracted.nodes) {
       let embedding: number[] | null = null
       try {
-        embedding = await generateEmbedding(apiKey, node.content)
+        embedding = await generateEmbedding(aiConfig.apiKey, node.content, aiConfig.provider as Provider)
       } catch {
         // Continue without embedding
       }

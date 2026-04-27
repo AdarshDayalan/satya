@@ -1,18 +1,18 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { getModel, generateEmbedding, extractJson } from '@/lib/gemini'
+import { getModel, generateEmbedding, type AIModel, type Provider } from '@/lib/ai'
+import { getUserAIConfig } from '@/lib/ai-config'
 import { EXTRACT_IDEAS_PROMPT, DETECT_RELATIONSHIPS_PROMPT } from '@/lib/prompts'
 import { detectSource } from '@/lib/sources'
 import { extractContent } from '@/lib/extractors'
 
 async function generateJson(
-  model: ReturnType<typeof getModel>,
+  model: AIModel,
   prompt: string
 ): Promise<Record<string, unknown>> {
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      const result = await model.generateContent(prompt)
-      return extractJson(result.response.text())
+      return await model.generateJSON(prompt)
     } catch (err) {
       console.error(`[satya] reprocess JSON attempt ${attempt + 1} failed:`, err)
       if (attempt === 1) throw err
@@ -37,6 +37,14 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
 
   if (!input) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
+  // Get user's AI config
+  let aiConfig
+  try {
+    aiConfig = await getUserAIConfig(supabase, user.id)
+  } catch {
+    return NextResponse.json({ error: 'No AI API key configured. Add your key in settings.' }, { status: 400 })
+  }
+
   // Delete old nodes (edges cascade)
   await supabase.from('nodes').delete().eq('input_id', id)
 
@@ -51,8 +59,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
       { videoId: source.videoId, url: source.url }
     )
 
-    const apiKey = process.env.GEMINI_API_KEY!
-    const model = getModel(apiKey)
+    const model = getModel(aiConfig.apiKey, aiConfig.provider as Provider, aiConfig.model)
     const prompt = EXTRACT_IDEAS_PROMPT.replace('{{raw_content}}', enrichedContent)
     const extracted = (await generateJson(model, prompt)) as {
       summary: string
@@ -64,7 +71,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
 
     for (const node of extracted.nodes) {
       let embedding: number[] | null = null
-      try { embedding = await generateEmbedding(apiKey, node.content) } catch { /* continue */ }
+      try { embedding = await generateEmbedding(aiConfig.apiKey, node.content, aiConfig.provider as Provider) } catch { /* continue */ }
 
       const { data: savedNode } = await supabase
         .from('nodes')
