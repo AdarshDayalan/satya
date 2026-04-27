@@ -1,7 +1,6 @@
 'use client'
 
 import { createContext, useContext, useState, useCallback, useRef, type ReactNode } from 'react'
-import SidePanel from './SidePanel'
 
 interface Selection {
   type: 'node' | 'input'
@@ -32,7 +31,9 @@ interface DataStore {
 }
 
 interface SelectionContextType {
+  selection: Selection | null
   select: (type: 'node' | 'input', id: string) => void
+  clearSelection: () => void
   store: DataStore
   updateNode: (id: string, updates: Partial<NodeFull>) => void
   removeNode: (id: string) => void
@@ -73,7 +74,7 @@ export function SelectionProvider({
     setSelection({ type, id })
   }, [])
 
-  const close = useCallback(() => setSelection(null), [])
+  const clearSelection = useCallback(() => setSelection(null), [])
 
   const updateNode = useCallback((id: string, updates: Partial<NodeFull>) => {
     setNodes(prev => {
@@ -140,21 +141,9 @@ export function SelectionProvider({
     },
   }
 
-  const allNodes = Array.from(nodes.values()).map(n => ({ id: n.id, content: n.content, type: n.type }))
-
   return (
-    <SelectionContext.Provider value={{ select, store, updateNode, removeNode, updateInput, removeInput, addEdge }}>
+    <SelectionContext.Provider value={{ selection, select, clearSelection, store, updateNode, removeNode, updateInput, removeInput, addEdge }}>
       {children}
-      {selection && (
-        <SidePanel
-          key={`${selection.type}-${selection.id}`}
-          type={selection.type}
-          id={selection.id}
-          onClose={close}
-          onNavigate={select}
-          allNodes={allNodes}
-        />
-      )}
     </SelectionContext.Provider>
   )
 }

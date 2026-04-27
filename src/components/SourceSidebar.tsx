@@ -77,7 +77,7 @@ export default function SourceSidebar({
   }
 
   return (
-    <aside className="w-56 shrink-0 border-r border-white/[0.06] overflow-y-auto text-[12px]" style={{ minHeight: 'calc(100vh - 49px)' }}>
+    <aside className="overflow-y-auto text-[12px]" style={{ minHeight: 'calc(100vh - 49px)' }}>
       {/* Header */}
       <div className="flex items-center justify-between px-3 h-8 border-b border-white/[0.06]">
         <span className="text-[10px] text-neutral-500 uppercase tracking-wider font-medium">Explorer</span>

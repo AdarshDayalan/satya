@@ -5,6 +5,8 @@ import Link from 'next/link'
 import ProcessingQueue from './ProcessingQueue'
 import SpacesPanel from './SpacesPanel'
 import KnowledgeGraph from './KnowledgeGraph'
+import SidePanel from './SidePanel'
+import { useSelection } from './SelectionContext'
 
 type NavKey = 'home' | 'graph' | 'files' | 'publish'
 
@@ -21,7 +23,9 @@ interface AppShellProps {
 }
 
 export default function AppShell({ children, filesPanel, headerActions, graphData }: AppShellProps) {
+  const { selection, select, clearSelection, store } = useSelection()
   const [activeNav, setActiveNav] = useState<NavKey>('home')
+  const allNodes = Array.from(store.nodes.values()).map(n => ({ id: n.id, content: n.content, type: n.type }))
 
   function handleNav(key: NavKey) {
     setActiveNav(key === activeNav ? 'home' : key)
@@ -114,18 +118,47 @@ export default function AppShell({ children, filesPanel, headerActions, graphDat
             />
           </div>
         ) : activeNav === 'files' ? (
-          <div className="flex-1 overflow-y-auto bg-[#080808]">
-            <ProcessingQueue />
-            {filesPanel}
+          <div className="flex-1 flex overflow-hidden bg-[#080808]">
+            <div className="w-56 shrink-0 overflow-y-auto">
+              <ProcessingQueue />
+              {filesPanel}
+            </div>
+            {selection ? (
+              <SidePanel
+                key={`${selection.type}-${selection.id}`}
+                type={selection.type}
+                id={selection.id}
+                onClose={clearSelection}
+                onNavigate={select}
+                allNodes={allNodes}
+                fullWidth
+              />
+            ) : (
+              <div className="flex-1 flex items-center justify-center">
+                <p className="text-neutral-700 text-[13px]">select a source or idea to view details</p>
+              </div>
+            )}
           </div>
         ) : activeNav === 'publish' ? (
           <div className="flex-1 overflow-y-auto bg-[#080808]">
             <SpacesPanel />
           </div>
         ) : (
-          <div className="flex-1 overflow-y-auto">
-            {children}
-          </div>
+          <>
+            <div className="flex-1 overflow-y-auto">
+              {children}
+            </div>
+            {selection && (
+              <SidePanel
+                key={`${selection.type}-${selection.id}`}
+                type={selection.type}
+                id={selection.id}
+                onClose={clearSelection}
+                onNavigate={select}
+                allNodes={allNodes}
+              />
+            )}
+          </>
         )}
       </div>
     </div>

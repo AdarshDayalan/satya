@@ -43,9 +43,10 @@ interface SidePanelProps {
   onClose: () => void
   onNavigate: (type: 'node' | 'input', id: string) => void
   allNodes: Array<{ id: string; content: string; type: string }>
+  fullWidth?: boolean
 }
 
-export default function SidePanel({ type, id, onClose, onNavigate, allNodes }: SidePanelProps) {
+export default function SidePanel({ type, id, onClose, onNavigate, allNodes, fullWidth }: SidePanelProps) {
   const { store, updateNode, removeNode, updateInput, removeInput } = useSelection()
   const [editing, setEditing] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -125,7 +126,7 @@ export default function SidePanel({ type, id, onClose, onNavigate, allNodes }: S
   }
 
   return (
-    <div className="w-96 shrink-0 border-l border-white/[0.06] bg-[#080808] overflow-y-auto flex flex-col h-full">
+    <div className={`${fullWidth ? 'flex-1' : 'w-96 shrink-0'} border-l border-white/[0.06] bg-[#080808] overflow-y-auto flex flex-col h-full`}>
       {/* Header */}
       <div className="flex items-center justify-between px-4 h-9 border-b border-white/[0.06] shrink-0">
         <span className="text-[10px] text-neutral-500 uppercase tracking-wider font-medium">

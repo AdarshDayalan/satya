@@ -27,7 +27,7 @@ export default async function PublishPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#050505] text-white relative">
+    <div className="min-h-screen bg-[#050505] text-white relative overflow-y-auto flex-1">
       <div className="fixed top-0 left-1/2 -translate-x-1/2 w-[800px] h-[400px] rounded-full bg-white/[0.01] blur-3xl pointer-events-none" />
 
       <header className="sticky top-0 z-20 backdrop-blur-xl bg-[#050505]/80 border-b border-white/[0.04] px-4 py-3 flex items-center justify-between">
