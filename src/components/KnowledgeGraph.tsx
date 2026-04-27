@@ -34,6 +34,7 @@ interface FolderNode {
 }
 
 const TYPE_COLORS: Record<string, string> = {
+  concept: '#f472b6',
   idea: '#60a5fa',
   question: '#fbbf24',
   source: '#34d399',
@@ -128,7 +129,7 @@ export default function KnowledgeGraph({
         vx: 0,
         vy: 0,
         connections: conn,
-        radius: 3 + (conn / maxConn) * 8,
+        radius: (n.type === 'concept' ? 6 : 3) + (conn / maxConn) * 8,
       }
     })
   }, [nodes, connectionCount])

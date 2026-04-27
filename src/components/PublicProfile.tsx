@@ -31,6 +31,7 @@ interface Folder {
 }
 
 const typeColors: Record<string, string> = {
+  concept: 'text-pink-400/60',
   idea: 'text-blue-400/60',
   question: 'text-amber-400/60',
   source: 'text-green-400/60',

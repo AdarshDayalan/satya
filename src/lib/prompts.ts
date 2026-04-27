@@ -1,8 +1,9 @@
-export const EXTRACT_IDEAS_PROMPT = `You are an AI research distiller.
+export const EXTRACT_IDEAS_PROMPT = `You are an AI research distiller building a personal knowledge graph.
 
-Given raw input, extract the core meaning nodes.
+Given raw input, extract meaning nodes at TWO levels:
 
-A meaning node is a short, atomic idea that can connect to other ideas.
+1. **Concepts** — big ideas, thinkers, philosophies, or belief systems referenced (e.g. "Osho", "Non-attachment", "Seed oil hypothesis"). These are anchor nodes that many ideas can connect to over time.
+2. **Ideas** — specific atomic claims, insights, or arguments from this text.
 
 Return valid JSON only, no markdown fences.
 
@@ -15,20 +16,18 @@ Return:
   "nodes": [
     {
       "content": "...",
-      "type": "idea"
+      "type": "concept | idea | question"
     }
-  ],
-  "questions": [
-    "..."
   ]
 }
 
 Rules:
-- Extract 3 to 8 nodes max.
-- Each node should be atomic.
-- Avoid vague summaries.
+- Extract 1-3 concept nodes for key people, philosophies, or big themes.
+- Extract 3-6 idea nodes for specific claims or insights.
+- Concept nodes should be named clearly (e.g. "Osho" not "A spiritual teacher").
+- Idea nodes should be atomic, specific claims — not vague summaries.
 - Avoid duplicate ideas.
-- Preserve uncertainty.
+- Preserve uncertainty — don't state things as fact if the source didn't.
 - Do not exaggerate claims.`
 
 export const DETECT_RELATIONSHIPS_PROMPT = `You are building an organic knowledge graph. Be highly selective — only connect ideas that genuinely illuminate each other.

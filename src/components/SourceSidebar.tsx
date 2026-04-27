@@ -162,6 +162,7 @@ const SRC_DOT: Record<string, string> = {
 }
 
 const NODE_DOT: Record<string, string> = {
+  concept: '#f472b6',
   idea: '#60a5fa',
   question: '#fbbf24',
   source: '#34d399',
