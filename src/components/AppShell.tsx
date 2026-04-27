@@ -109,7 +109,7 @@ export default function AppShell({ children, filesPanel, headerActions, graphDat
 
         {/* Main content area — switches based on active nav */}
         {activeNav === 'graph' && graphData ? (
-          <div className="flex-1 overflow-hidden bg-[#050505]">
+          <div className="flex-1 overflow-hidden bg-[#050505] relative">
             <KnowledgeGraph
               nodes={graphData.nodes}
               edges={graphData.edges}
@@ -118,6 +118,18 @@ export default function AppShell({ children, filesPanel, headerActions, graphDat
               onNodeClick={(id) => select('node', id)}
               fullscreen
             />
+            {selection && (
+              <div className="absolute top-0 right-0 h-full z-20">
+                <SidePanel
+                  key={`${selection.type}-${selection.id}`}
+                  type={selection.type}
+                  id={selection.id}
+                  onClose={clearSelection}
+                  onNavigate={select}
+                  allNodes={allNodes}
+                />
+              </div>
+            )}
           </div>
         ) : activeNav === 'files' ? (
           <div className="flex-1 flex overflow-hidden bg-[#080808]">

@@ -1,8 +1,9 @@
 'use client'
 
-import { useRef, useEffect, useCallback, useState, useMemo } from 'react'
+import { useRef, useEffect, useCallback, useState, useMemo, Fragment } from 'react'
 import { computeEvidenceRank, weightToRadius } from '@/lib/evidence-rank'
 import { useRouter } from 'next/navigation'
+import { useGraphNavigation } from './GraphNavigationContext'
 
 interface GraphNode {
   id: string
@@ -16,6 +17,10 @@ interface GraphNode {
   vy?: number
   connections?: number
   radius?: number
+  targetRadius?: number
+  displayRadius?: number
+  targetAlpha?: number
+  displayAlpha?: number
 }
 
 interface GraphEdge {
@@ -116,86 +121,94 @@ export default function KnowledgeGraph({
     return weightToRadius(ranks, 3, 22)
   }, [nodes, edges])
 
-  // Hierarchical expansion — show concepts first, expand on click
-  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
+  // Focus stack navigation — from context
+  const graphNav = (() => { try { return useGraphNavigation() } catch { return null } })()
+  const focusStack = graphNav?.focusStack ?? []
+  const focusedNodeId = graphNav?.focusedNodeId ?? null
+  const pushFocusRef = useRef(graphNav?.pushFocus)
+  pushFocusRef.current = graphNav?.pushFocus
 
-  // Determine which nodes are visible
-  const visibleNodeIds = useMemo(() => {
-    const visible = new Set<string>()
-
-    // Build adjacency map
-    const adj = new Map<string, Array<{ id: string; rel: string }>>()
+  // Adjacency map (shared)
+  const adj = useMemo(() => {
+    const map = new Map<string, string[]>()
     for (const e of edges) {
-      if (!adj.has(e.from_node_id)) adj.set(e.from_node_id, [])
-      if (!adj.has(e.to_node_id)) adj.set(e.to_node_id, [])
-      adj.get(e.from_node_id)!.push({ id: e.to_node_id, rel: e.relationship })
-      adj.get(e.to_node_id)!.push({ id: e.from_node_id, rel: e.relationship })
+      if (!map.has(e.from_node_id)) map.set(e.from_node_id, [])
+      if (!map.has(e.to_node_id)) map.set(e.to_node_id, [])
+      map.get(e.from_node_id)!.push(e.to_node_id)
+      map.get(e.to_node_id)!.push(e.from_node_id)
     }
+    return map
+  }, [edges])
 
-    // Always show concept nodes (top-level beliefs)
-    for (const n of nodes) {
-      if (n.type === 'concept') visible.add(n.id)
-    }
+  // Node roles: focus, child, ancestor, sibling, or top-level
+  type NodeRole = 'focus' | 'child' | 'ancestor' | 'sibling' | 'top'
+  const { visibleNodeIds, nodeRoles } = useMemo(() => {
+    const visible = new Set<string>()
+    const roles = new Map<string, NodeRole>()
 
-    // Show orphan nodes (no edges) — they float alone
-    for (const n of nodes) {
-      if (!adj.has(n.id) || adj.get(n.id)!.length === 0) visible.add(n.id)
-    }
+    if (!focusedNodeId) {
+      // Top-level view: concepts + orphans + top-ranked
+      for (const n of nodes) {
+        if (n.type === 'concept') { visible.add(n.id); roles.set(n.id, 'top') }
+      }
+      for (const n of nodes) {
+        if (!adj.has(n.id) || adj.get(n.id)!.length === 0) { visible.add(n.id); roles.set(n.id, 'top') }
+      }
+      if (visible.size < 5) {
+        const ranked = [...nodes]
+          .sort((a, b) => (nodeRadii.get(b.id) || 0) - (nodeRadii.get(a.id) || 0))
+          .slice(0, Math.max(8, nodes.length > 20 ? 12 : nodes.length))
+        for (const n of ranked) { visible.add(n.id); if (!roles.has(n.id)) roles.set(n.id, 'top') }
+      }
+    } else {
+      // Focused view
+      visible.add(focusedNodeId); roles.set(focusedNodeId, 'focus')
 
-    // If fewer than 5 concepts, show top nodes by EvidenceRank
-    if (visible.size < 5) {
-      const ranked = [...nodes]
-        .sort((a, b) => (nodeRadii.get(b.id) || 0) - (nodeRadii.get(a.id) || 0))
-        .slice(0, Math.max(8, nodes.length > 20 ? 12 : nodes.length))
-      for (const n of ranked) visible.add(n.id)
-    }
+      // Children of focused
+      for (const childId of (adj.get(focusedNodeId) || [])) {
+        visible.add(childId); roles.set(childId, 'child')
+      }
 
-    // Show children of expanded nodes
-    for (const expandedId of expandedIds) {
-      visible.add(expandedId)
-      const neighbors = adj.get(expandedId) || []
-      for (const neighbor of neighbors) {
-        visible.add(neighbor.id)
+      // Ancestors (rest of stack)
+      for (let i = 0; i < focusStack.length - 1; i++) {
+        visible.add(focusStack[i]); roles.set(focusStack[i], 'ancestor')
+      }
+
+      // Siblings (other children of parent)
+      if (focusStack.length >= 2) {
+        const parentId = focusStack[focusStack.length - 2]
+        for (const sibId of (adj.get(parentId) || [])) {
+          if (!visible.has(sibId)) { visible.add(sibId); roles.set(sibId, 'sibling') }
+        }
       }
     }
-
-    return visible
-  }, [nodes, edges, expandedIds, nodeRadii])
+    return { visibleNodeIds: visible, nodeRoles: roles }
+  }, [nodes, edges, focusedNodeId, focusStack, nodeRadii, adj])
 
   // Filter to visible
   const visibleNodes = useMemo(() => nodes.filter(n => visibleNodeIds.has(n.id)), [nodes, visibleNodeIds])
   const visibleEdges = useMemo(() => edges.filter(e => visibleNodeIds.has(e.from_node_id) && visibleNodeIds.has(e.to_node_id)), [edges, visibleNodeIds])
 
-  // Count hidden children per node (for expand indicator)
+  // Count hidden children per visible node
   const hiddenChildCount = useMemo(() => {
     const counts = new Map<string, number>()
-    const adj = new Map<string, string[]>()
-    for (const e of edges) {
-      if (!adj.has(e.from_node_id)) adj.set(e.from_node_id, [])
-      if (!adj.has(e.to_node_id)) adj.set(e.to_node_id, [])
-      adj.get(e.from_node_id)!.push(e.to_node_id)
-      adj.get(e.to_node_id)!.push(e.from_node_id)
-    }
     for (const n of visibleNodes) {
       const neighbors = adj.get(n.id) || []
       const hidden = neighbors.filter(id => !visibleNodeIds.has(id)).length
       if (hidden > 0) counts.set(n.id, hidden)
     }
     return counts
-  }, [visibleNodes, edges, visibleNodeIds])
+  }, [visibleNodes, adj, visibleNodeIds])
 
-  // Refs for event listener closures
+  // Refs for closures
   const hiddenChildCountRef = useRef(hiddenChildCount)
   hiddenChildCountRef.current = hiddenChildCount
+  const nodeRolesRef = useRef(nodeRoles)
+  nodeRolesRef.current = nodeRoles
 
-  const toggleExpandRef = useRef((nodeId: string) => {
-    setExpandedIds(prev => {
-      const next = new Set(prev)
-      if (next.has(nodeId)) next.delete(nodeId)
-      else next.add(nodeId)
-      return next
-    })
-  })
+  // Camera animation targets
+  const targetPan = useRef({ x: 0, y: 0 })
+  const targetZoom = useRef(1)
 
   // Build folder membership map
   const folderMap = useRef<Map<string, string[]>>(new Map())
@@ -223,8 +236,32 @@ export default function KnowledgeGraph({
     const existing = new Map(graphNodes.current.map(n => [n.id, n]))
 
     graphNodes.current = visibleNodes.map((n, i) => {
+      const baseRadius = nodeRadii.get(n.id) || 4
+      const role = nodeRoles.get(n.id) || 'top'
+
+      // Role-based target values
+      const targetRadius = role === 'focus' ? baseRadius * 1.5
+        : role === 'child' ? baseRadius * 1.0
+        : role === 'ancestor' ? baseRadius * 0.6
+        : role === 'sibling' ? baseRadius * 0.4
+        : baseRadius
+      const targetAlpha = role === 'focus' ? 1.0
+        : role === 'child' ? 0.85
+        : role === 'ancestor' ? 0.2
+        : role === 'sibling' ? 0.12
+        : 0.85
+
       const prev = existing.get(n.id)
-      if (prev) return { ...prev, ...n, radius: nodeRadii.get(n.id) || 4 }
+      if (prev) {
+        return {
+          ...prev, ...n,
+          radius: baseRadius,
+          targetRadius,
+          targetAlpha,
+          displayRadius: prev.displayRadius ?? baseRadius,
+          displayAlpha: prev.displayAlpha ?? 0.85,
+        }
+      }
 
       const angle = (i / visibleNodes.length) * Math.PI * 2
       const r = Math.min(w, h) * 0.3
@@ -235,10 +272,14 @@ export default function KnowledgeGraph({
         vx: 0,
         vy: 0,
         connections: 0,
-        radius: nodeRadii.get(n.id) || 4,
+        radius: baseRadius,
+        targetRadius,
+        targetAlpha,
+        displayRadius: 0, // Start invisible, lerp in
+        displayAlpha: 0,
       }
     })
-  }, [visibleNodes, nodeRadii])
+  }, [visibleNodes, nodeRadii, nodeRoles])
 
   // Find cluster centers for folder labels
   const getClusterCenters = useCallback(() => {
@@ -324,11 +365,39 @@ export default function KnowledgeGraph({
 
       for (const n of gn) {
         if (n === dragging) continue
-        n.vx! *= 0.9
-        n.vy! *= 0.9
+
+        // Role-based physics: ancestors/siblings get heavy damping
+        const role = nodeRolesRef.current.get(n.id)
+        const damping = (role === 'ancestor' || role === 'sibling') ? 0.7 : 0.9
+
+        n.vx! *= damping
+        n.vy! *= damping
         n.x! += n.vx!
         n.y! += n.vy!
+
+        // Focus node: lerp toward canvas center
+        if (role === 'focus') {
+          const cx = w / 2 / zoom.current - pan.current.x / zoom.current
+          const cy = h / 2 / zoom.current - pan.current.y / zoom.current
+          n.x! += (cx - n.x!) * 0.04
+          n.y! += (cy - n.y!) * 0.04
+          n.vx = 0; n.vy = 0
+        }
+
+        // Lerp display values toward targets
+        const LERP = 0.06
+        if (n.targetAlpha !== undefined) {
+          n.displayAlpha = (n.displayAlpha ?? 0.85) + (n.targetAlpha - (n.displayAlpha ?? 0.85)) * LERP
+        }
+        if (n.targetRadius !== undefined) {
+          n.displayRadius = (n.displayRadius ?? n.radius!) + (n.targetRadius - (n.displayRadius ?? n.radius!)) * LERP
+        }
       }
+
+      // Camera lerp
+      pan.current.x += (targetPan.current.x - pan.current.x) * 0.06
+      pan.current.y += (targetPan.current.y - pan.current.y) * 0.06
+      zoom.current += (targetZoom.current - zoom.current) * 0.06
 
       // --- Draw cluster glows ---
       for (const [, nodeIds] of folderMap.current.entries()) {
@@ -422,28 +491,32 @@ export default function KnowledgeGraph({
       ctx.globalAlpha = 1
       for (const n of gn) {
         const color = TYPE_COLORS[n.type] || TYPE_COLORS.raw
-        const r = n.radius || 4
+        const r = n.displayRadius ?? n.radius ?? 4
+        const alpha = n.displayAlpha ?? 0.85
         const isHovered = hovered === n
         const isConnectSource = connectFrom.current === n
+        const role = nodeRolesRef.current.get(n.id)
 
-        const age = (Date.now() - new Date(n.created_at).getTime()) / (1000 * 60 * 60 * 24)
-        const recencyAlpha = Math.max(0.02, 0.15 - age * 0.003)
+        if (alpha < 0.05) continue
 
-        if (isHovered || isConnectSource || recencyAlpha > 0.03) {
-          const glowR = (isHovered || isConnectSource) ? r * 4 : r * 2.5
+        // Glow for hover, focus, or connect source
+        if (isHovered || isConnectSource || role === 'focus') {
+          const glowR = (isHovered || isConnectSource) ? r * 4 : role === 'focus' ? r * 3 : r * 2
           const grad = ctx.createRadialGradient(n.x!, n.y!, r * 0.5, n.x!, n.y!, glowR)
-          grad.addColorStop(0, color + ((isHovered || isConnectSource) ? '40' : Math.round(recencyAlpha * 255).toString(16).padStart(2, '0')))
+          grad.addColorStop(0, color + '30')
           grad.addColorStop(1, color + '00')
           ctx.beginPath()
           ctx.arc(n.x!, n.y!, glowR, 0, Math.PI * 2)
           ctx.fillStyle = grad
+          ctx.globalAlpha = alpha
           ctx.fill()
         }
 
+        // Core dot
         ctx.beginPath()
         ctx.arc(n.x!, n.y!, r, 0, Math.PI * 2)
         ctx.fillStyle = color
-        ctx.globalAlpha = isHovered ? 1 : 0.85
+        ctx.globalAlpha = isHovered ? Math.min(1, alpha + 0.3) : alpha
         ctx.fill()
 
         // Ring on connect source
@@ -456,24 +529,26 @@ export default function KnowledgeGraph({
           ctx.stroke()
         }
 
-        // Label — only show on hover or big nodes (high EvidenceRank)
-        const isBigNode = r >= 10
-        if (isHovered || isBigNode) {
-          ctx.fillStyle = isHovered ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.3)'
-          const fontSize = isHovered ? 11 : 8
-          ctx.font = `${fontSize}px system-ui`
+        // Label — show for focus, hovered, or visible child/top nodes
+        const showLabel = isHovered || role === 'focus' || (role === 'child' && r >= 6) || (role === 'top' && r >= 8)
+        if (showLabel && alpha > 0.15) {
+          const isFocus = role === 'focus'
+          ctx.fillStyle = isHovered || isFocus ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.4)'
+          const fontSize = isHovered ? 11 : isFocus ? 12 : 8
+          ctx.font = `${isFocus ? 'bold ' : ''}${fontSize}px system-ui`
           ctx.textAlign = 'center'
-          ctx.globalAlpha = isHovered ? 1 : 0.4
-          const maxLen = isHovered ? 50 : 22
+          ctx.globalAlpha = (isHovered || isFocus ? 1 : 0.5) * alpha
+          const maxLen = isHovered || isFocus ? 50 : 22
           const label = n.content.length > maxLen ? n.content.slice(0, maxLen) + '…' : n.content
           ctx.fillText(label, n.x!, n.y! + r + 12)
         }
-        // Expand indicator — show "+N" badge if node has hidden children
-        const hiddenCount = hiddenChildCount.get(n.id)
-        if (hiddenCount && hiddenCount > 0) {
+
+        // Expand badge — hidden children count
+        const hiddenCount = hiddenChildCountRef.current.get(n.id)
+        if (hiddenCount && hiddenCount > 0 && alpha > 0.3) {
           const badgeX = n.x! + r + 2
           const badgeY = n.y! - r - 2
-          ctx.globalAlpha = isHovered ? 0.9 : 0.5
+          ctx.globalAlpha = (isHovered ? 0.9 : 0.5) * alpha
           ctx.fillStyle = '#a78bfa'
           ctx.beginPath()
           ctx.arc(badgeX, badgeY, 6, 0, Math.PI * 2)
@@ -628,14 +703,15 @@ export default function KnowledgeGraph({
           const dx = Math.abs((mouse.current.x - pan.current.x) / zoom.current - node.x!)
           const dy = Math.abs((mouse.current.y - pan.current.y) / zoom.current - node.y!)
           if (dx < 5 && dy < 5) {
-            // Expand hidden children if any
-            const hidden = hiddenChildCountRef.current.get(node.id)
-            if (hidden && hidden > 0) {
-              toggleExpandRef.current(node.id)
-            }
-            // Always open side panel on click
-            if (onNodeClickRef.current) {
-              onNodeClickRef.current(node.id)
+            const role = nodeRolesRef.current.get(node.id)
+            if (role === 'focus') {
+              // Already focused — open detail panel
+              if (onNodeClickRef.current) onNodeClickRef.current(node.id)
+            } else {
+              // Traverse into this node
+              if (pushFocusRef.current) pushFocusRef.current(node.id)
+              // Also open detail
+              if (onNodeClickRef.current) onNodeClickRef.current(node.id)
             }
           }
         }
@@ -683,6 +759,62 @@ export default function KnowledgeGraph({
     }
   }, [router])
 
+  // Camera targeting — center on focused node when focus changes
+  useEffect(() => {
+    if (focusedNodeId) {
+      const focusNode = graphNodes.current.find(n => n.id === focusedNodeId)
+      const canvas = canvasRef.current
+      if (focusNode && canvas) {
+        const w = canvas.offsetWidth / 2
+        const h = canvas.offsetHeight / 2
+        targetPan.current = {
+          x: w - focusNode.x! * zoom.current,
+          y: h - focusNode.y! * zoom.current,
+        }
+        targetZoom.current = 1.2
+      }
+    } else {
+      targetPan.current = { x: 0, y: 0 }
+      targetZoom.current = 1
+    }
+  }, [focusedNodeId])
+
+  // Keyboard navigation
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape' || e.key === 'Backspace') {
+        if (graphNav && focusStack.length > 0) {
+          e.preventDefault()
+          graphNav.popFocus()
+        }
+      }
+      // Arrow keys to cycle through siblings at current level
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        if (!graphNav || !focusedNodeId) return
+        // Get siblings: children of parent (or top-level if no parent)
+        const parentId = focusStack.length >= 2 ? focusStack[focusStack.length - 2] : null
+        const siblings = parentId
+          ? (adj.get(parentId) || [])
+          : nodes.filter(n => n.type === 'concept').map(n => n.id)
+
+        if (siblings.length < 2) return
+        const currentIdx = siblings.indexOf(focusedNodeId)
+        if (currentIdx === -1) return
+
+        const dir = e.key === 'ArrowRight' ? 1 : -1
+        const nextIdx = (currentIdx + dir + siblings.length) % siblings.length
+        const nextId = siblings[nextIdx]
+
+        // Replace last element of focus stack
+        graphNav.jumpTo(focusStack.length - 2)
+        setTimeout(() => graphNav.pushFocus(nextId), 10)
+      }
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [graphNav, focusStack, focusedNodeId, adj, nodes])
+
   async function handleConnect() {
     if (!pendingConnection) return
     setConnSaving(true)
@@ -720,10 +852,26 @@ export default function KnowledgeGraph({
         style={fullscreen ? { height: '100%' } : { height: 'calc(100vh)' }}
       />
 
-      {/* Hint */}
-      <div className="absolute top-3 left-3 text-[10px] text-neutral-700">
-        shift + drag to connect
+      {/* Back button + hint */}
+      <div className="absolute top-3 left-3 flex items-center gap-2">
+        {focusStack.length > 0 && graphNav && (
+          <button
+            onClick={() => graphNav.popFocus()}
+            className="flex items-center gap-1 px-2.5 py-1 text-[11px] text-neutral-400 hover:text-white bg-white/[0.05] border border-white/[0.06] rounded-lg hover:bg-white/[0.08] transition-all"
+          >
+            ← back
+          </button>
+        )}
+        <span className="text-[10px] text-neutral-700">
+          {focusStack.length > 0 ? 'esc to go back · ← → to cycle' : 'click to explore · shift+drag to connect'}
+        </span>
       </div>
+
+      {/* Search bar */}
+      <GraphSearchBar nodes={nodes} nodeRadii={nodeRadii} onSelect={(id) => {
+        if (pushFocusRef.current) pushFocusRef.current(id)
+        if (onNodeClickRef.current) onNodeClickRef.current(id)
+      }} />
 
       {/* Fullscreen toggle */}
       {!fullscreen && (
@@ -826,6 +974,115 @@ export default function KnowledgeGraph({
           className="w-7 h-7 flex items-center justify-center text-neutral-600 hover:text-white bg-white/[0.04] border border-white/[0.06] rounded-lg text-[10px] transition-colors"
         >fit</button>
       </div>
+
+      {/* Legend */}
+      <GraphLegend />
+    </div>
+  )
+}
+
+function GraphLegend() {
+  const [open, setOpen] = useState(false)
+  const [expanded, setExpanded] = useState<string | null>(null)
+  const toggle = (key: string) => setExpanded(expanded === key ? null : key)
+
+  const nodeTypes = [
+    { type: 'concept', color: TYPE_COLORS.concept, desc: 'Core truth claims — ideas that evidence flows toward' },
+    { type: 'idea', color: TYPE_COLORS.idea, desc: 'Extracted insights from your sources' },
+    { type: 'question', color: TYPE_COLORS.question, desc: 'Open questions worth exploring further' },
+    { type: 'source', color: TYPE_COLORS.source, desc: 'Original source material — articles, papers, videos' },
+    { type: 'synthesis', color: TYPE_COLORS.synthesis, desc: 'Connections synthesized across multiple ideas' },
+  ]
+  const edgeTypes = [
+    { rel: 'supports', color: REL_COLORS.supports, desc: 'Evidence that strengthens the target idea', dashed: false },
+    { rel: 'contradicts', color: REL_COLORS.contradicts, desc: 'Conflicting evidence — dashed vibrating line', dashed: true },
+    { rel: 'refines', color: REL_COLORS.refines, desc: 'Adds nuance or precision to an idea', dashed: false },
+    { rel: 'causes', color: REL_COLORS.causes, desc: 'Causal or mechanistic relationship', dashed: false },
+    { rel: 'example of', color: REL_COLORS.example_of, desc: 'A concrete instance of a broader concept', dashed: false },
+    { rel: 'similar', color: REL_COLORS.similar, desc: 'Related without directional relationship', dashed: false },
+  ]
+  const visualCues = [
+    { label: 'Node size', desc: 'Larger = higher EvidenceRank (more support)' },
+    { label: 'Edge thickness', desc: 'Thicker = stronger relationship (0\u20131)' },
+    { label: 'Glow', desc: 'Recently added nodes glow, fading over days' },
+    { label: '+N badge', desc: 'Hidden children \u2014 click to expand' },
+    { label: 'Cluster glow', desc: 'Purple halo groups nodes from same source' },
+  ]
+
+  return (
+    <div className="absolute bottom-3 left-3 z-10">
+      {!open ? (
+        <button onClick={() => setOpen(true)} title="Legend"
+          className="w-7 h-7 flex items-center justify-center text-neutral-600 hover:text-neutral-400 bg-white/[0.04] border border-white/[0.06] rounded-lg transition-colors">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.2">
+            <circle cx="7" cy="7" r="5.5" /><path d="M7 6.5V10M7 4.5v0" strokeLinecap="round" />
+          </svg>
+        </button>
+      ) : (
+        <div className="w-52 bg-[#0a0a0a]/95 border border-white/[0.08] rounded-xl backdrop-blur-sm shadow-2xl overflow-hidden">
+          <button onClick={() => setOpen(false)}
+            className="w-full flex items-center justify-between px-3 py-2 text-[11px] text-neutral-400 hover:text-white/70">
+            <span>legend</span>
+            <svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M1 1l6 6M7 1l-6 6" /></svg>
+          </button>
+          <div className="max-h-[60vh] overflow-y-auto">
+            <LegendSection title="nodes" isOpen={expanded === 'nodes'} onToggle={() => toggle('nodes')}>
+              {nodeTypes.map(n => (
+                <div key={n.type} className="flex items-start gap-2 px-3 py-1">
+                  <span className="w-2 h-2 rounded-full shrink-0 mt-[3px]" style={{ backgroundColor: n.color }} />
+                  <div className="min-w-0">
+                    <span className="text-[10px] text-white/60">{n.type}</span>
+                    {expanded === 'nodes' && <p className="text-[9px] text-neutral-600 leading-snug mt-0.5">{n.desc}</p>}
+                  </div>
+                </div>
+              ))}
+            </LegendSection>
+            <LegendSection title="edges" isOpen={expanded === 'edges'} onToggle={() => toggle('edges')}>
+              {edgeTypes.map(e => (
+                <div key={e.rel} className="flex items-start gap-2 px-3 py-1">
+                  <svg width="14" height="6" viewBox="0 0 14 6" className="shrink-0 mt-[3px]">
+                    <line x1="0" y1="3" x2="14" y2="3" stroke={e.color} strokeWidth="1.5" strokeDasharray={e.dashed ? '2 2' : undefined} />
+                  </svg>
+                  <div className="min-w-0">
+                    <span className="text-[10px] text-white/60">{e.rel}</span>
+                    {expanded === 'edges' && <p className="text-[9px] text-neutral-600 leading-snug mt-0.5">{e.desc}</p>}
+                  </div>
+                </div>
+              ))}
+            </LegendSection>
+            <LegendSection title="visual cues" isOpen={expanded === 'cues'} onToggle={() => toggle('cues')}>
+              {visualCues.map(c => (
+                <div key={c.label} className="px-3 py-1">
+                  <span className="text-[10px] text-white/60">{c.label}</span>
+                  {expanded === 'cues' && <p className="text-[9px] text-neutral-600 leading-snug mt-0.5">{c.desc}</p>}
+                </div>
+              ))}
+            </LegendSection>
+          </div>
+          <div className="px-3 py-2 border-t border-white/[0.04] text-[9px] text-neutral-700 space-y-0.5">
+            <p>scroll to zoom · drag to pan</p>
+            <p>shift+drag between nodes to connect</p>
+            <p>click node to expand & inspect</p>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function LegendSection({ title, isOpen, onToggle, children }: {
+  title: string; isOpen: boolean; onToggle: () => void; children: React.ReactNode
+}) {
+  return (
+    <div className="border-t border-white/[0.04]">
+      <button onClick={onToggle} className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-white/[0.03] transition-colors">
+        <span className="text-[10px] text-neutral-500">{title}</span>
+        <svg width="8" height="8" viewBox="0 0 8 8" fill="currentColor"
+          className={`text-neutral-700 transition-transform ${isOpen ? 'rotate-90' : ''}`}>
+          <path d="M2 1l4 3-4 3z" />
+        </svg>
+      </button>
+      <div className="pb-1.5">{children}</div>
     </div>
   )
 }

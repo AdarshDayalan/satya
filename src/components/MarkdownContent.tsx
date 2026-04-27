@@ -5,6 +5,7 @@ import remarkGfm from 'remark-gfm'
 
 export default function MarkdownContent({ content }: { content: string }) {
   return (
+    <div className="min-w-0 overflow-hidden" style={{ overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
       components={{
@@ -53,5 +54,6 @@ export default function MarkdownContent({ content }: { content: string }) {
     >
       {content}
     </ReactMarkdown>
+    </div>
   )
 }
