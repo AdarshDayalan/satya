@@ -366,13 +366,18 @@ export default function KnowledgeGraph({
           ctx.stroke()
         }
 
-        ctx.fillStyle = isHovered ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.45)'
-        ctx.font = `${isHovered ? 11 : 9}px system-ui`
-        ctx.textAlign = 'center'
-        ctx.globalAlpha = isHovered ? 1 : 0.6
-        const maxLen = isHovered ? 50 : 25
-        const label = n.content.length > maxLen ? n.content.slice(0, maxLen) + '…' : n.content
-        ctx.fillText(label, n.x!, n.y! + r + 14)
+        // Label — scale font with zoom, hide at low zoom to avoid clutter
+        const effectiveZoom = zoom.current
+        if (isHovered || effectiveZoom > 0.5) {
+          ctx.fillStyle = isHovered ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.4)'
+          const fontSize = isHovered ? 11 : Math.max(7, 9 / Math.max(effectiveZoom, 0.6))
+          ctx.font = `${fontSize}px system-ui`
+          ctx.textAlign = 'center'
+          ctx.globalAlpha = isHovered ? 1 : Math.min(0.6, effectiveZoom * 0.6)
+          const maxLen = isHovered ? 40 : 18
+          const label = n.content.length > maxLen ? n.content.slice(0, maxLen) + '…' : n.content
+          ctx.fillText(label, n.x!, n.y! + r + 12)
+        }
         ctx.globalAlpha = 1
       }
 
