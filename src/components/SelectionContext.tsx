@@ -35,19 +35,17 @@ export function SelectionProvider({
 
   return (
     <SelectionContext.Provider value={{ select }}>
-      <div className="flex relative z-10" style={{ minHeight: 'calc(100vh - 49px)' }}>
-        {children}
-        {selection && (
-          <SidePanel
-            key={`${selection.type}-${selection.id}`}
-            type={selection.type}
-            id={selection.id}
-            onClose={close}
-            onNavigate={select}
-            allNodes={allNodes}
-          />
-        )}
-      </div>
+      {children}
+      {selection && (
+        <SidePanel
+          key={`${selection.type}-${selection.id}`}
+          type={selection.type}
+          id={selection.id}
+          onClose={close}
+          onNavigate={select}
+          allNodes={allNodes}
+        />
+      )}
     </SelectionContext.Provider>
   )
 }

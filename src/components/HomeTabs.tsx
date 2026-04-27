@@ -91,7 +91,7 @@ export default function HomeTabs({
           <KnowledgeGraph nodes={nodes} edges={edges} folders={folders} folderNodes={folderNodes} />
           <button
             onClick={() => setCreateOpen(true)}
-            className="absolute bottom-3 right-3 text-[11px] text-neutral-600 hover:text-white/70 px-2 py-1 rounded bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] transition-colors"
+            className="absolute bottom-3 left-3 text-[11px] text-neutral-600 hover:text-white/70 px-2 py-1 rounded bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] transition-colors"
           >
             + node
           </button>
