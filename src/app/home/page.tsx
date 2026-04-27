@@ -1,11 +1,10 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import InputBox from '@/components/InputBox'
-import NodeList from '@/components/NodeList'
-import FolderList from '@/components/FolderList'
 import SourceSidebar from '@/components/SourceSidebar'
 import HomeTabs from '@/components/HomeTabs'
 import HeaderActions from '@/components/HeaderActions'
+import HomeLayout from '@/components/HomeLayout'
 
 export default async function HomePage() {
   const supabase = await createClient()
@@ -39,6 +38,8 @@ export default async function HomePage() {
       .limit(500),
   ])
 
+  const allNodes = (nodes ?? []).map((n) => ({ id: n.id, content: n.content, type: n.type }))
+
   return (
     <div className="min-h-screen bg-[#050505] text-white relative">
       {/* Ambient glow */}
@@ -62,25 +63,31 @@ export default async function HomePage() {
         </div>
       </header>
 
-      <div className="flex relative z-10" style={{ minHeight: 'calc(100vh - 49px)' }}>
-        <SourceSidebar
-          inputs={inputs ?? []}
-          folders={folders ?? []}
-          folderNodes={folderNodesData ?? []}
-          nodes={nodes ?? []}
-        />
+      <HomeLayout allNodes={allNodes}>
+        {(onSelect) => (
+          <>
+            <SourceSidebar
+              inputs={inputs ?? []}
+              folders={folders ?? []}
+              folderNodes={folderNodesData ?? []}
+              nodes={nodes ?? []}
+              onSelect={onSelect}
+            />
 
-        <main className="flex-1 max-w-2xl mx-auto px-6 py-10 space-y-10">
-          <InputBox />
-          <HomeTabs
-            nodes={nodes ?? []}
-            edges={edges ?? []}
-            folders={folders ?? []}
-            folderNodes={folderNodesData ?? []}
-            inputs={inputs ?? []}
-          />
-        </main>
-      </div>
+            <main className="flex-1 max-w-2xl mx-auto px-6 py-10 space-y-10">
+              <InputBox />
+              <HomeTabs
+                nodes={nodes ?? []}
+                edges={edges ?? []}
+                folders={folders ?? []}
+                folderNodes={folderNodesData ?? []}
+                inputs={inputs ?? []}
+                onSelect={onSelect}
+              />
+            </main>
+          </>
+        )}
+      </HomeLayout>
     </div>
   )
 }

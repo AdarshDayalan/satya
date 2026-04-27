@@ -1,6 +1,5 @@
 'use client'
 
-import Link from 'next/link'
 
 interface Node {
   id: string
@@ -36,7 +35,7 @@ const SOURCE_CONFIG: Record<string, { label: string; color: string }> = {
   pubmed: { label: 'PubMed', color: 'text-cyan-400/50' },
 }
 
-export default function NodeList({ nodes, inputs }: { nodes: Node[]; inputs: Input[] }) {
+export default function NodeList({ nodes, inputs, onSelect }: { nodes: Node[]; inputs: Input[]; onSelect?: (type: 'node' | 'input', id: string) => void }) {
   if (nodes.length === 0) {
     return (
       <div className="text-center py-16 space-y-3">
@@ -63,10 +62,10 @@ export default function NodeList({ nodes, inputs }: { nodes: Node[]; inputs: Inp
             : null
 
           return (
-            <Link
+            <button
               key={node.id}
-              href={`/nodes/${node.id}`}
-              className="node-card block bg-white/[0.02] border border-white/[0.04] rounded-xl px-4 py-3 hover:bg-white/[0.04]"
+              onClick={() => onSelect?.('node', node.id)}
+              className="node-card w-full text-left block bg-white/[0.02] border border-white/[0.04] rounded-xl px-4 py-3 hover:bg-white/[0.04]"
             >
               <p className="text-white/80 text-[14px] leading-relaxed">{node.content}</p>
               <div className="flex items-center gap-2 mt-2 flex-wrap">
@@ -91,7 +90,7 @@ export default function NodeList({ nodes, inputs }: { nodes: Node[]; inputs: Inp
                   </>
                 )}
               </div>
-            </Link>
+            </button>
           )
         })}
       </div>

@@ -8,7 +8,7 @@ interface ExtractionResult {
 export async function extractContent(
   rawContent: string,
   sourceType: SourceType,
-  options: { videoId?: string; url?: string | null; startTime?: number; endTime?: number; redditPath?: string; pubmedId?: string }
+  options: { videoId?: string; url?: string | null; startTime?: number; endTime?: number; redditPath?: string; pubmedId?: string; isPmc?: boolean }
 ): Promise<ExtractionResult> {
   switch (sourceType) {
     case 'youtube':
@@ -16,7 +16,7 @@ export async function extractContent(
     case 'reddit':
       return extractReddit(rawContent, options.redditPath)
     case 'pubmed':
-      return extractPubMed(rawContent, options.pubmedId)
+      return extractPubMed(rawContent, options.pubmedId, options.isPmc)
     case 'article':
       return extractArticle(rawContent, options.url)
     case 'instagram':
@@ -124,7 +124,20 @@ async function extractArticle(
       .replace(/<[^>]+>/g, ' ')
       .replace(/\s+/g, ' ')
       .trim()
-      .slice(0, 5000) // Cap at 5k chars for Gemini
+      .slice(0, 5000)
+
+    // Detect bot/captcha pages
+    const blockedSignals = ['recaptcha', 'captcha', 'checking your browser', 'just a moment', 'cloudflare', 'access denied', 'enable javascript']
+    const lowerText = textContent.toLowerCase()
+    const isBlocked = blockedSignals.some(s => lowerText.includes(s)) || textContent.length < 200
+
+    if (isBlocked) {
+      // Fall back to just the URL — don't feed captcha text to AI
+      return {
+        enrichedContent: `[Article — content could not be extracted (site requires browser)]\nURL: ${url}\n\n${rawContent.replace(/https?:\/\/[^\s]+/g, '').trim()}`.trim(),
+        metadata: { ...metadata, extractionFailed: true },
+      }
+    }
 
     metadata.contentLength = textContent.length
 
@@ -234,16 +247,36 @@ async function extractReddit(
 
 async function extractPubMed(
   rawContent: string,
-  pubmedId: string | undefined
+  pubmedId: string | undefined,
+  isPmc?: boolean
 ): Promise<ExtractionResult> {
   if (!pubmedId) return { enrichedContent: rawContent, metadata: {} }
 
+  let resolvedId = pubmedId
   const metadata: Record<string, unknown> = { pubmedId }
+
+  // If PMC ID, convert to PubMed ID first
+  if (isPmc) {
+    metadata.pmcId = `PMC${pubmedId}`
+    try {
+      const convertRes = await fetch(
+        `https://www.ncbi.nlm.nih.gov/pmc/utils/idconv/v1.0/?ids=PMC${pubmedId}&format=json`,
+        { signal: AbortSignal.timeout(5000) }
+      )
+      if (convertRes.ok) {
+        const data = await convertRes.json()
+        const pmid = data.records?.[0]?.pmid
+        if (pmid) resolvedId = pmid
+      }
+    } catch { /* use PMC ID directly with pmc db */ }
+  }
 
   try {
     // NCBI E-utilities — free, no key needed
+    const db = isPmc && resolvedId === pubmedId ? 'pmc' : 'pubmed'
+    const fetchId = isPmc && resolvedId === pubmedId ? `PMC${pubmedId}` : resolvedId
     const res = await fetch(
-      `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=pubmed&id=${pubmedId}&retmode=xml`,
+      `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=${db}&id=${fetchId}&retmode=xml`,
       { signal: AbortSignal.timeout(8000) }
     )
     if (!res.ok) return { enrichedContent: rawContent, metadata }

@@ -1,9 +1,11 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import NodeList from './NodeList'
 import FolderList from './FolderList'
 import KnowledgeGraph from './KnowledgeGraph'
+import CreateNodeModal from './CreateNodeModal'
 
 interface Node {
   id: string
@@ -53,18 +55,22 @@ export default function HomeTabs({
   folders,
   folderNodes,
   inputs,
+  onSelect,
 }: {
   nodes: Node[]
   edges: Edge[]
   folders: Folder[]
   folderNodes: FolderNode[]
   inputs: Input[]
+  onSelect?: (type: 'node' | 'input', id: string) => void
 }) {
   const [tab, setTab] = useState<TabKey>('graph')
+  const [createOpen, setCreateOpen] = useState(false)
+  const router = useRouter()
 
   return (
     <div className="space-y-6">
-      <div className="flex gap-1 px-1">
+      <div className="flex items-center gap-1 px-1">
         {TABS.map((t) => (
           <button
             key={t.key}
@@ -81,13 +87,22 @@ export default function HomeTabs({
       </div>
 
       {tab === 'graph' && (
-        <KnowledgeGraph nodes={nodes} edges={edges} folders={folders} folderNodes={folderNodes} />
+        <div className="relative">
+          <KnowledgeGraph nodes={nodes} edges={edges} folders={folders} folderNodes={folderNodes} />
+          <button
+            onClick={() => setCreateOpen(true)}
+            className="absolute bottom-3 right-3 text-[11px] text-neutral-600 hover:text-white/70 px-2 py-1 rounded bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] transition-colors"
+          >
+            + node
+          </button>
+          <CreateNodeModal open={createOpen} onClose={() => setCreateOpen(false)} onCreated={() => router.refresh()} />
+        </div>
       )}
 
       {tab === 'fragments' && (
         <div className="space-y-10">
           <FolderList folders={folders} />
-          <NodeList nodes={nodes} inputs={inputs} />
+          <NodeList nodes={nodes} inputs={inputs} onSelect={onSelect} />
         </div>
       )}
     </div>

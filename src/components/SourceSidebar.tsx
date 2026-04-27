@@ -1,6 +1,5 @@
 'use client'
 
-import Link from 'next/link'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 
@@ -36,11 +35,13 @@ export default function SourceSidebar({
   folders,
   folderNodes,
   nodes,
+  onSelect,
 }: {
   inputs: Input[]
   folders: Folder[]
   folderNodes: FolderNode[]
   nodes: Node[]
+  onSelect?: (type: 'node' | 'input', id: string) => void
 }) {
   const router = useRouter()
   const [expanded, setExpanded] = useState<Record<string, boolean>>({ sources: true })
@@ -115,9 +116,9 @@ export default function SourceSidebar({
           <div key={folder.id}>
             <Row indent={0} open={open} onClick={() => toggle(folder.id)} icon="folder" label={folder.name} count={children.length} />
             {open && children.map((n) => (
-              <Link key={n.id} href={`/nodes/${n.id}`}>
+              <div key={n.id} onClick={() => onSelect?.('node', n.id)} className="cursor-pointer">
                 <Row indent={1} label={n.content.slice(0, 36) + (n.content.length > 36 ? '…' : '')} icon="node" nodeType={n.type} />
-              </Link>
+              </div>
             ))}
             {open && children.length === 0 && (
               <div className="h-[22px] pl-10 flex items-center text-[11px] text-neutral-700 italic">empty</div>
@@ -131,9 +132,9 @@ export default function SourceSidebar({
       {/* Sources */}
       <Row indent={0} open={expanded.sources} onClick={() => toggle('sources')} icon="section" label="Sources" count={inputs.length} />
       {expanded.sources && inputs.map((input) => (
-        <Link key={input.id} href={`/inputs/${input.id}`}>
+        <div key={input.id} onClick={() => onSelect?.('input', input.id)} className="cursor-pointer">
           <Row indent={1} label={getTitle(input)} icon="source" sourceType={input.source_type || 'journal'} />
-        </Link>
+        </div>
       ))}
       {expanded.sources && inputs.length === 0 && (
         <div className="h-[22px] pl-8 flex items-center text-[11px] text-neutral-700 italic">no sources yet</div>

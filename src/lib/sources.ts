@@ -8,6 +8,7 @@ interface DetectedSource {
   endTime?: number
   redditPath?: string
   pubmedId?: string
+  isPmc?: boolean
 }
 
 const YT_REGEX = /(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]+)/
@@ -16,6 +17,7 @@ const INSTA_REGEX = /instagram\.com\/(reel|p)\/([\w-]+)/
 const ARXIV_REGEX = /arxiv\.org\/(?:abs|pdf)\/([\d.]+)/
 const REDDIT_REGEX = /reddit\.com\/(r\/\w+\/comments\/\w+[^\s]*)/
 const PUBMED_REGEX = /pubmed\.ncbi\.nlm\.nih\.gov\/(\d+)/
+const PMC_REGEX = /pmc\.ncbi\.nlm\.nih\.gov\/articles\/PMC(\d+)/
 const URL_REGEX = /https?:\/\/[^\s]+/
 const TIME_RANGE_REGEX = /(?:from\s+)?(\d{1,2}:\d{2})\s*(?:to|-)\s*(\d{1,2}:\d{2})/i
 
@@ -43,6 +45,11 @@ export function detectSource(content: string): DetectedSource {
   const redditMatch = content.match(REDDIT_REGEX)
   if (redditMatch) {
     return { type: 'reddit', url: content.match(URL_REGEX)?.[0] ?? null, redditPath: redditMatch[1] }
+  }
+
+  const pmcMatch = content.match(PMC_REGEX)
+  if (pmcMatch) {
+    return { type: 'pubmed', url: content.match(URL_REGEX)?.[0] ?? null, pubmedId: pmcMatch[1], isPmc: true }
   }
 
   const pubmedMatch = content.match(PUBMED_REGEX)

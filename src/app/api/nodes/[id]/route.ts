@@ -1,6 +1,51 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 
+export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const { data: node } = await supabase
+    .from('nodes')
+    .select('*')
+    .eq('id', id)
+    .eq('user_id', user.id)
+    .single()
+
+  if (!node) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
+  const [{ data: edgesFrom }, { data: edgesTo }] = await Promise.all([
+    supabase.from('edges').select('id, to_node_id, relationship, strength, reason').eq('from_node_id', id),
+    supabase.from('edges').select('id, from_node_id, relationship, strength, reason').eq('to_node_id', id),
+  ])
+
+  const connectedIds = [
+    ...(edgesFrom ?? []).map((e) => e.to_node_id),
+    ...(edgesTo ?? []).map((e) => e.from_node_id),
+  ]
+
+  let connectedNodes: Record<string, { id: string; content: string; type: string }> = {}
+  if (connectedIds.length > 0) {
+    const { data } = await supabase.from('nodes').select('id, content, type').in('id', connectedIds)
+    for (const n of data ?? []) connectedNodes[n.id] = n
+  }
+
+  const connections = [
+    ...(edgesFrom ?? []).map((e) => ({
+      node: connectedNodes[e.to_node_id] || { id: e.to_node_id, content: '?', type: 'raw' },
+      relationship: e.relationship, strength: e.strength, reason: e.reason, edgeId: e.id,
+    })),
+    ...(edgesTo ?? []).map((e) => ({
+      node: connectedNodes[e.from_node_id] || { id: e.from_node_id, content: '?', type: 'raw' },
+      relationship: e.relationship, strength: e.strength, reason: e.reason, edgeId: e.id,
+    })),
+  ]
+
+  return NextResponse.json({ node, connections })
+}
+
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const supabase = await createClient()
