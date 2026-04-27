@@ -28,8 +28,8 @@ Return:
 }
 
 Rules:
-- Extract 0-2 concept nodes ONLY if the text genuinely reveals a core truth or belief. Don't force it.
-- Extract 3-6 idea nodes for specific claims or evidence.
+- Extract as many or as few nodes as the text warrants. A short text with one insight = 1 node. A dense text with many truths = many nodes. Let the content dictate the count.
+- Only extract concept nodes when the text genuinely reveals a core truth or belief. Don't force it.
 - Concept nodes must be truth claims — statements that can be supported or challenged, not labels or names.
 - Idea nodes should be atomic, specific claims — not vague summaries.
 - Avoid duplicate ideas.
