@@ -1,13 +1,13 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { getModel, generateEmbedding } from '@/lib/gemini'
+import { getModel, generateEmbedding, extractJson } from '@/lib/gemini'
 import {
   EXTRACT_IDEAS_PROMPT,
   DETECT_RELATIONSHIPS_PROMPT,
   SUGGEST_FOLDER_PROMPT,
 } from '@/lib/prompts'
 
-async function parseJsonWithRetry(
+async function generateJson(
   model: ReturnType<typeof getModel>,
   prompt: string
 ): Promise<Record<string, unknown>> {
@@ -15,9 +15,10 @@ async function parseJsonWithRetry(
     try {
       const result = await model.generateContent(prompt)
       const text = result.response.text()
-      return JSON.parse(text)
-    } catch {
-      if (attempt === 1) throw new Error('JSON parse failed after retry')
+      return extractJson(text)
+    } catch (err) {
+      console.error(`[satya] JSON attempt ${attempt + 1} failed:`, err)
+      if (attempt === 1) throw err
     }
   }
   throw new Error('unreachable')
@@ -57,7 +58,7 @@ export async function POST(req: Request) {
 
     // Step 2: Extract meaning nodes (with retry)
     const prompt = EXTRACT_IDEAS_PROMPT.replace('{{raw_content}}', raw_content)
-    const extracted = (await parseJsonWithRetry(model, prompt)) as {
+    const extracted = (await generateJson(model, prompt)) as {
       summary: string
       nodes: Array<{ content: string; type: string }>
     }
@@ -113,7 +114,7 @@ export async function POST(req: Request) {
               JSON.stringify({ id: savedNode.id, content: savedNode.content })
             ).replace('{{nearby_nodes}}', JSON.stringify(candidates))
 
-            const parsed = (await parseJsonWithRetry(model, relPrompt)) as {
+            const parsed = (await generateJson(model, relPrompt)) as {
               relationships: Array<{
                 existing_node_id: string
                 relationship: string
@@ -188,7 +189,7 @@ export async function POST(req: Request) {
             JSON.stringify(clusterNodes)
           )
 
-          const folderResult = (await parseJsonWithRetry(model, folderPrompt)) as {
+          const folderResult = (await generateJson(model, folderPrompt)) as {
             should_create_folder: boolean
             folder_name: string
             description: string
@@ -236,12 +237,17 @@ export async function POST(req: Request) {
       edges: createdEdges,
       folder: folderSuggestion,
     })
-  } catch {
+  } catch (err) {
+    console.error('[satya] Processing failed:', err)
     await supabase
       .from('inputs')
       .update({ status: 'failed' })
       .eq('id', input.id)
 
-    return NextResponse.json({ error: 'Processing failed', input }, { status: 500 })
+    return NextResponse.json({
+      error: 'Processing failed',
+      message: err instanceof Error ? err.message : 'Unknown error',
+      input,
+    }, { status: 500 })
   }
 }

@@ -3,7 +3,18 @@ import { GoogleGenerativeAI } from '@google/generative-ai'
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!)
 
 export function getModel() {
-  return genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
+  return genAI.getGenerativeModel({
+    model: 'gemini-2.5-flash-preview-04-17',
+    generationConfig: {
+      responseMimeType: 'application/json',
+    },
+  })
+}
+
+export function extractJson(text: string): Record<string, unknown> {
+  // Strip markdown fences if present
+  const cleaned = text.replace(/```(?:json)?\n?/g, '').trim()
+  return JSON.parse(cleaned)
 }
 
 export async function generateEmbedding(text: string): Promise<number[]> {
