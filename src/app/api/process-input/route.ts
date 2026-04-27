@@ -258,40 +258,78 @@ export async function POST(req: Request) {
             .select('id, content, type')
             .in('id', [...connectedNodeIds])
 
-          const folderPrompt = SUGGEST_FOLDER_PROMPT.replace(
-            '{{cluster_nodes}}',
-            JSON.stringify(clusterNodes)
-          )
+          // Check if any existing folder already covers these nodes
+          const { data: existingFolderNodes } = await supabase
+            .from('folder_nodes')
+            .select('folder_id, node_id')
+            .in('node_id', [...connectedNodeIds])
 
-          const folderResult = (await generateJson(model, folderPrompt)) as {
-            should_create_folder: boolean
-            folder_name: string
-            description: string
-            confidence: number
+          const folderOverlap = new Map<string, number>()
+          for (const fn of existingFolderNodes ?? []) {
+            folderOverlap.set(fn.folder_id, (folderOverlap.get(fn.folder_id) || 0) + 1)
           }
 
-          if (folderResult.should_create_folder && folderResult.confidence >= 0.75) {
-            const { data: folder } = await supabase
-              .from('folders')
-              .insert({
-                user_id: user.id,
-                name: folderResult.folder_name,
-                description: folderResult.description,
-                confidence: folderResult.confidence,
-                created_by: 'ai',
-              })
-              .select()
-              .single()
+          // If an existing folder covers 40%+ of these nodes, add the rest to it
+          let bestFolderId: string | null = null
+          let bestOverlap = 0
+          for (const [fid, count] of folderOverlap) {
+            const ratio = count / connectedNodeIds.size
+            if (ratio >= 0.4 && count > bestOverlap) {
+              bestFolderId = fid
+              bestOverlap = count
+            }
+          }
 
-            if (folder) {
-              const folderNodeRows = [...connectedNodeIds].map((nodeId) => ({
-                folder_id: folder.id,
-                node_id: nodeId,
-                added_by: 'ai',
-              }))
+          if (bestFolderId) {
+            // Add missing nodes to existing folder
+            const existingNodeIds = new Set(
+              (existingFolderNodes ?? []).filter(fn => fn.folder_id === bestFolderId).map(fn => fn.node_id)
+            )
+            const newNodeIds = [...connectedNodeIds].filter(id => !existingNodeIds.has(id))
+            if (newNodeIds.length > 0) {
+              await supabase.from('folder_nodes').insert(
+                newNodeIds.map(nodeId => ({ folder_id: bestFolderId!, node_id: nodeId, added_by: 'ai' }))
+              )
+            }
+            const { data: existingFolder } = await supabase.from('folders').select().eq('id', bestFolderId).single()
+            folderSuggestion = existingFolder
+          } else {
+            // No matching folder — ask AI to suggest a new one
+            const folderPrompt = SUGGEST_FOLDER_PROMPT.replace(
+              '{{cluster_nodes}}',
+              JSON.stringify(clusterNodes)
+            )
 
-              await supabase.from('folder_nodes').insert(folderNodeRows)
-              folderSuggestion = folder
+            const folderResult = (await generateJson(model, folderPrompt)) as {
+              should_create_folder: boolean
+              folder_name: string
+              description: string
+              confidence: number
+            }
+
+            if (folderResult.should_create_folder && folderResult.confidence >= 0.6) {
+              const { data: folder } = await supabase
+                .from('folders')
+                .insert({
+                  user_id: user.id,
+                  name: folderResult.folder_name,
+                  description: folderResult.description,
+                  confidence: folderResult.confidence,
+                  created_by: 'ai',
+                })
+                .select()
+                .single()
+
+              if (folder) {
+                const folderNodeRows = [...connectedNodeIds].map((nodeId) => ({
+                  folder_id: folder.id,
+                  node_id: nodeId,
+                  added_by: 'ai',
+                }))
+
+                await supabase.from('folder_nodes').insert(folderNodeRows)
+                folderSuggestion = folder
+              }
             }
           }
         }

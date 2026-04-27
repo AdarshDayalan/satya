@@ -1,4 +1,7 @@
-export type SourceType = 'journal' | 'youtube' | 'instagram' | 'article' | 'research_paper' | 'reddit' | 'pubmed'
+export type SourceType =
+  | 'journal' | 'youtube' | 'instagram' | 'article' | 'research_paper'
+  | 'reddit' | 'pubmed' | 'blog' | 'podcast' | 'book' | 'twitter'
+  | 'tiktok' | 'newsletter' | 'wikipedia' | 'government'
 
 interface DetectedSource {
   type: SourceType
@@ -39,6 +42,13 @@ const ACADEMIC_DOMAINS = [
   'biomedcentral.com',
   'jci.org',
 ]
+const TWITTER_REGEX = /(?:twitter\.com|x\.com)\/\w+\/status\/\d+/
+const TIKTOK_REGEX = /tiktok\.com\/@[\w.]+\/video\/\d+/
+const WIKIPEDIA_REGEX = /(?:\w+\.)?wikipedia\.org\/wiki\//
+const GOV_DOMAINS = ['.gov', '.gov.uk', '.gc.ca', '.gov.au', 'who.int', 'cdc.gov', 'nih.gov', 'fda.gov', 'epa.gov']
+const PODCAST_DOMAINS = ['podcasts.apple.com', 'open.spotify.com/episode', 'open.spotify.com/show', 'overcast.fm', 'pocketcasts.com', 'castbox.fm']
+const BLOG_DOMAINS = ['medium.com', 'substack.com', 'dev.to', 'hashnode.dev', 'wordpress.com', 'blogger.com', 'tumblr.com']
+const NEWSLETTER_DOMAINS = ['beehiiv.com', 'buttondown.email', 'convertkit.com', 'mailchi.mp']
 const PDF_REGEX = /\.pdf(?:\?|$|#)/i
 const URL_REGEX = /https?:\/\/[^\s]+/
 const TIME_RANGE_REGEX = /(?:from\s+)?(\d{1,2}:\d{2})\s*(?:to|-)\s*(\d{1,2}:\d{2})/i
@@ -87,6 +97,18 @@ export function detectSource(content: string): DetectedSource {
     return { type: 'research_paper', url: content.match(URL_REGEX)?.[0] ?? null }
   }
 
+  if (TWITTER_REGEX.test(content)) {
+    return { type: 'twitter', url: content.match(URL_REGEX)?.[0] ?? null }
+  }
+
+  if (TIKTOK_REGEX.test(content)) {
+    return { type: 'tiktok', url: content.match(URL_REGEX)?.[0] ?? null }
+  }
+
+  if (WIKIPEDIA_REGEX.test(content)) {
+    return { type: 'wikipedia', url: content.match(URL_REGEX)?.[0] ?? null }
+  }
+
   const urlMatch = content.match(URL_REGEX)
   if (urlMatch) {
     const url = urlMatch[0]
@@ -105,6 +127,26 @@ export function detectSource(content: string): DetectedSource {
 
     if (isAcademic || doi) {
       return { type: 'research_paper', url, doi }
+    }
+
+    // Government sources
+    if (GOV_DOMAINS.some(d => url.includes(d))) {
+      return { type: 'government', url }
+    }
+
+    // Podcasts
+    if (PODCAST_DOMAINS.some(d => url.includes(d))) {
+      return { type: 'podcast', url }
+    }
+
+    // Newsletters (check before blog since substack can be both)
+    if (NEWSLETTER_DOMAINS.some(d => url.includes(d))) {
+      return { type: 'newsletter', url }
+    }
+
+    // Blogs
+    if (BLOG_DOMAINS.some(d => url.includes(d))) {
+      return { type: 'blog', url }
     }
 
     return { type: 'article', url }

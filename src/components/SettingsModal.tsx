@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import Portal from './Portal'
+import ThemePicker from './ThemePicker'
 
 const PROVIDERS = [
   { id: 'gemini', name: 'Google Gemini', models: ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash'], keyUrl: 'https://aistudio.google.com/apikey', keyLabel: 'aistudio.google.com' },
@@ -112,6 +113,8 @@ export default function SettingsModal({ open, onClose }: { open: boolean; onClos
             </p>
           </div>
         </div>
+
+        <ThemePicker />
 
         <div className="flex items-center justify-between pt-2">
           <span className="text-[12px]">

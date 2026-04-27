@@ -4,6 +4,7 @@ import { useRef, useEffect, useCallback, useState, useMemo, Fragment } from 'rea
 import { computeEvidenceRank, weightToRadius } from '@/lib/evidence-rank'
 import { useRouter } from 'next/navigation'
 import { useGraphNavigation } from './GraphNavigationContext'
+import { useTheme } from './ThemeContext'
 
 interface GraphNode {
   id: string
