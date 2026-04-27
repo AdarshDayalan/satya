@@ -139,9 +139,12 @@ export default function SidePanel({ type, id, onClose, onNavigate, allNodes, ful
     <div className={`${fullWidth ? 'flex-1' : 'w-96 shrink-0'} border-l border-white/[0.06] bg-[#080808] overflow-y-auto flex flex-col h-full overflow-x-hidden`} style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
       {/* Header */}
       <div className="flex items-center justify-between px-4 h-9 border-b border-white/[0.06] shrink-0">
-        <span className="text-[10px] text-neutral-500 uppercase tracking-wider font-medium">
-          {type === 'node' ? 'Node' : 'Source'}
-        </span>
+        <div className="flex items-center gap-2">
+          <button onClick={onClose} className="text-neutral-600 hover:text-white/70 text-[11px]">←</button>
+          <span className="text-[10px] text-neutral-500 uppercase tracking-wider font-medium">
+            {type === 'node' ? 'Node' : 'Source'}
+          </span>
+        </div>
         <button onClick={onClose} className="text-neutral-600 hover:text-white/70 text-[11px]">✕</button>
       </div>
 

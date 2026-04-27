@@ -319,6 +319,22 @@ export default function KnowledgeGraph({
     return centers
   }, [folders])
 
+  // Resize canvas when container changes (sidebar open/close)
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const observer = new ResizeObserver(() => {
+      const w = canvas.offsetWidth
+      const h = canvas.offsetHeight
+      if (w > 0 && h > 0) {
+        canvas.width = w * 2
+        canvas.height = h * 2
+      }
+    })
+    observer.observe(canvas)
+    return () => observer.disconnect()
+  }, [])
+
   useEffect(() => {
     init()
     const canvas = canvasRef.current
@@ -550,16 +566,58 @@ export default function KnowledgeGraph({
           ctx.stroke()
         }
 
-        // Label — show for focus, hovered, or visible child/top nodes
-        const showLabel = isHovered || role === 'focus' || (role === 'child' && r >= 6) || (role === 'top' && r >= 8)
-        if (showLabel && alpha > 0.15) {
-          const isFocus = role === 'focus'
-          ctx.fillStyle = isHovered || isFocus ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.4)'
-          const fontSize = isHovered ? 11 : isFocus ? 12 : 8
-          ctx.font = `${isFocus ? 'bold ' : ''}${fontSize}px system-ui`
+        // Label — focused node gets full content card, others get truncated labels
+        const isFocus = role === 'focus'
+        const showLabel = isHovered || isFocus || (role === 'child' && r >= 6) || (role === 'top' && r >= 8)
+
+        if (isFocus && alpha > 0.3) {
+          // Full info card for focused node
+          ctx.globalAlpha = alpha
+          const cardY = n.y! + r + 16
+          const maxWidth = 280
+          ctx.font = 'bold 12px system-ui'
           ctx.textAlign = 'center'
-          ctx.globalAlpha = (isHovered || isFocus ? 1 : 0.5) * alpha
-          const maxLen = isHovered || isFocus ? 50 : 22
+
+          // Type label
+          ctx.fillStyle = color
+          ctx.globalAlpha = 0.6 * alpha
+          ctx.font = '9px system-ui'
+          ctx.fillText(n.type.toUpperCase(), n.x!, cardY)
+
+          // Content — word wrap
+          ctx.fillStyle = 'rgba(255,255,255,0.9)'
+          ctx.globalAlpha = alpha
+          ctx.font = '12px system-ui'
+          const words = n.content.split(' ')
+          let line = ''
+          let lineY = cardY + 16
+          for (const word of words) {
+            const test = line + (line ? ' ' : '') + word
+            if (ctx.measureText(test).width > maxWidth && line) {
+              ctx.fillText(line, n.x!, lineY)
+              line = word
+              lineY += 16
+              if (lineY > cardY + 64) { ctx.fillText(line + '…', n.x!, lineY); line = ''; break }
+            } else {
+              line = test
+            }
+          }
+          if (line) ctx.fillText(line, n.x!, lineY)
+
+          // Connection count
+          const connCount = adj.get(n.id)?.length || 0
+          const hiddenCount = hiddenChildCountRef.current.get(n.id) || 0
+          ctx.font = '9px system-ui'
+          ctx.fillStyle = 'rgba(255,255,255,0.3)'
+          ctx.globalAlpha = 0.5 * alpha
+          ctx.fillText(`${connCount} connections${hiddenCount > 0 ? ` · ${hiddenCount} hidden` : ''}`, n.x!, lineY + 18)
+        } else if (showLabel && alpha > 0.15) {
+          ctx.fillStyle = isHovered ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.4)'
+          const fontSize = isHovered ? 11 : 8
+          ctx.font = `${fontSize}px system-ui`
+          ctx.textAlign = 'center'
+          ctx.globalAlpha = (isHovered ? 1 : 0.5) * alpha
+          const maxLen = isHovered ? 50 : 22
           const label = n.content.length > maxLen ? n.content.slice(0, maxLen) + '…' : n.content
           ctx.fillText(label, n.x!, n.y! + r + 12)
         }
