@@ -12,6 +12,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (body.content !== undefined) updates.content = body.content
   if (body.type !== undefined) updates.type = body.type
   if (body.summary !== undefined) updates.summary = body.summary
+  if (body.weight !== undefined) updates.weight = body.weight
 
   const { data, error } = await supabase
     .from('nodes')

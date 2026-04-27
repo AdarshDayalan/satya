@@ -38,6 +38,13 @@ export default async function NodePage({ params }: { params: Promise<{ id: strin
     sourceInput = data
   }
 
+  // Get all nodes for the connect modal
+  const { data: allNodes } = await supabase
+    .from('nodes')
+    .select('id, content, type')
+    .order('created_at', { ascending: false })
+    .limit(100)
+
   const connections = [
     ...(edgesFrom ?? []).map((e: Record<string, unknown>) => ({
       node: e.to_node as { id: string; content: string; type: string },
@@ -66,7 +73,7 @@ export default async function NodePage({ params }: { params: Promise<{ id: strin
       </header>
 
       <main className="max-w-xl mx-auto px-4 py-10 space-y-8 relative z-10">
-        <NodeDetail node={node} connections={connections} sourceInput={sourceInput} />
+        <NodeDetail node={node} connections={connections} sourceInput={sourceInput} allNodes={allNodes ?? []} />
       </main>
     </div>
   )

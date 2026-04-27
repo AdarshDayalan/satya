@@ -7,6 +7,7 @@ interface GraphNode {
   id: string
   content: string
   type: string
+  weight?: number
   created_at: string
   x?: number
   y?: number
@@ -129,7 +130,7 @@ export default function KnowledgeGraph({
         vx: 0,
         vy: 0,
         connections: conn,
-        radius: (n.type === 'concept' ? 6 : 3) + (conn / maxConn) * 8,
+        radius: ((n.type === 'concept' ? 6 : 3) + (conn / maxConn) * 8) * (n.weight || 1),
       }
     })
   }, [nodes, connectionCount])
