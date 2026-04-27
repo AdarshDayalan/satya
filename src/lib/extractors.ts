@@ -438,6 +438,91 @@ async function extractResearchPaper(
   }
 }
 
+async function extractJournal(rawContent: string): Promise<ExtractionResult> {
+  // Find all URLs embedded in the journal text
+  const urlRegex = /https?:\/\/[^\s)>\]]+/g
+  const urls = [...new Set(rawContent.match(urlRegex) || [])]
+
+  if (urls.length === 0) {
+    return { enrichedContent: rawContent, metadata: {} }
+  }
+
+  const metadata: Record<string, unknown> = { embeddedUrls: urls.length }
+
+  // Fetch context from embedded links (parallel, max 5 to avoid slowdown)
+  const urlsToFetch = urls.slice(0, 5)
+  const contexts = await Promise.allSettled(
+    urlsToFetch.map(async (url) => {
+      try {
+        // PubMed special handling
+        const pubmedMatch = url.match(/pubmed\.ncbi\.nlm\.nih\.gov\/(\d+)/)
+        if (pubmedMatch) {
+          const res = await fetch(
+            `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=pubmed&id=${pubmedMatch[1]}&retmode=xml`,
+            { signal: AbortSignal.timeout(5000) }
+          )
+          if (res.ok) {
+            const xml = await res.text()
+            const title = xml.match(/<ArticleTitle>([^<]+)<\/ArticleTitle>/)?.[1]
+            const abstract = xml.match(/<AbstractText[^>]*>([^<]+)<\/AbstractText>/g)
+              ?.map((p: string) => p.match(/>([^<]+)/)?.[1]).join(' ') || ''
+            return `[PubMed ${pubmedMatch[1]}] ${title || ''}: ${abstract.slice(0, 500)}`
+          }
+        }
+
+        // PMC special handling
+        const pmcMatch = url.match(/pmc\.ncbi\.nlm\.nih\.gov\/articles\/PMC(\d+)/)
+        if (pmcMatch) {
+          const res = await fetch(
+            `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=pmc&id=${pmcMatch[1]}&retmode=xml`,
+            { signal: AbortSignal.timeout(5000) }
+          )
+          if (res.ok) {
+            const xml = await res.text()
+            const title = xml.match(/<article-title>([^<]+)<\/article-title>/)?.[1]
+            const abstract = xml.match(/<abstract[\s\S]*?<\/abstract>/)?.[0]
+              ?.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 500) || ''
+            return `[PMC${pmcMatch[1]}] ${title || ''}: ${abstract}`
+          }
+        }
+
+        // Generic URL — fetch title + meta description
+        const res = await fetch(url, {
+          headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Satya/1.0)' },
+          signal: AbortSignal.timeout(4000),
+        })
+        if (!res.ok) return null
+        const html = await res.text().then(t => t.slice(0, 15000))
+        const title = html.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1]?.trim()
+        const desc = html.match(/<meta[^>]*name=["']description["'][^>]*content=["']([^"']+)["']/i)?.[1]
+        if (title || desc) return `[${new URL(url).hostname}] ${title || ''}: ${desc || ''}`
+        return null
+      } catch {
+        return null
+      }
+    })
+  )
+
+  const contextLines = contexts
+    .map(r => r.status === 'fulfilled' ? r.value : null)
+    .filter(Boolean) as string[]
+
+  if (contextLines.length === 0) {
+    return { enrichedContent: rawContent, metadata }
+  }
+
+  metadata.resolvedSources = contextLines.length
+
+  const enriched = [
+    rawContent,
+    '',
+    '--- Research context from embedded links ---',
+    ...contextLines,
+  ].join('\n')
+
+  return { enrichedContent: enriched, metadata }
+}
+
 function formatTime(seconds: number): string {
   const m = Math.floor(seconds / 60)
   const s = seconds % 60
