@@ -8,10 +8,11 @@ import GraphSidebar from './GraphSidebar'
 import SidePanel from './SidePanel'
 
 interface GraphWithPanelProps {
-  nodes: Array<{ id: string; content: string; type: string; created_at: string }>
-  edges: Array<{ from_node_id: string; to_node_id: string; relationship: string; strength: number }>
+  nodes: Array<{ id: string; content: string; type: string; created_at: string; input_id?: string | null; source_url?: string | null; perspectives?: string[] }>
+  edges: Array<{ from_node_id: string; to_node_id: string; relationship: string; strength: number; reason?: string }>
   folders: Array<{ id: string; name: string }>
   folderNodes: Array<{ folder_id: string; node_id: string }>
+  inputs?: Array<{ id: string; raw_content: string; source_type: string; source_metadata: Record<string, unknown>; status: string; created_at: string }>
 }
 
 function GraphCanvas({ nodes, edges, folders, folderNodes }: GraphWithPanelProps) {
@@ -67,11 +68,11 @@ function DetailPanelWrapper({ allNodes }: { allNodes: Array<{ id: string; conten
   )
 }
 
-export default function GraphWithPanel({ nodes, edges, folders, folderNodes }: GraphWithPanelProps) {
-  const fullNodes = nodes.map(n => ({ ...n, weight: 1, input_id: null }))
+export default function GraphWithPanel({ nodes, edges, folders, folderNodes, inputs = [] }: GraphWithPanelProps) {
+  const fullNodes = nodes.map(n => ({ ...n, weight: 1, input_id: n.input_id ?? null }))
   const allNodes = nodes.map(n => ({ id: n.id, content: n.content, type: n.type }))
   return (
-    <SelectionProvider initialNodes={fullNodes} initialEdges={edges} initialInputs={[]}>
+    <SelectionProvider initialNodes={fullNodes} initialEdges={edges} initialInputs={inputs}>
       <GraphNavigationProvider nodes={nodes} edges={edges}>
         <div className="flex-1 flex overflow-hidden">
           <GraphSidebarWrapper nodes={nodes} edges={edges} />
