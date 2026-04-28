@@ -17,6 +17,7 @@ const typeColors: Record<string, string> = {
   question: 'text-amber-400/60',
   source: 'text-green-400/60',
   synthesis: 'text-purple-400/60',
+  self: 'text-violet-300/80',
   raw: 'text-neutral-500',
 }
 
