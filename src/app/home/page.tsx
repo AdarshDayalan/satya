@@ -25,9 +25,10 @@ export default async function HomePage() {
   }))
 
   const graphData = {
-    nodes: (nodes ?? []).map((n: { id: string; content: string; type: string; weight?: number; created_at: string }) => ({
-      id: n.id, content: n.content, type: n.type, weight: n.weight, created_at: n.created_at,
+    nodes: (nodes ?? []).map((n: { id: string; content: string; type: string; weight?: number; created_at: string; input_id?: string }) => ({
+      id: n.id, content: n.content, type: n.type, weight: n.weight, created_at: n.created_at, input_id: n.input_id,
     })),
+    inputs: (inputs ?? []).map((i: { id: string; source_type: string }) => ({ id: i.id, source_type: i.source_type })),
     edges: edges ?? [],
     folders: (folders ?? []).map((f: { id: string; name: string }) => ({ id: f.id, name: f.name })),
     folderNodes: folderNodesData ?? [],

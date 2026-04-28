@@ -18,10 +18,11 @@ interface AppShellProps {
   filesPanel: React.ReactNode
   headerActions?: React.ReactNode
   graphData?: {
-    nodes: Array<{ id: string; content: string; type: string; weight?: number; created_at: string }>
+    nodes: Array<{ id: string; content: string; type: string; weight?: number; created_at: string; input_id?: string }>
     edges: Array<{ from_node_id: string; to_node_id: string; relationship: string; strength: number }>
     folders: Array<{ id: string; name: string }>
     folderNodes: Array<{ folder_id: string; node_id: string }>
+    inputs?: Array<{ id: string; source_type: string }>
   }
 }
 
@@ -137,6 +138,7 @@ export default function AppShell({ children, filesPanel, headerActions, graphDat
                   edges={graphData.edges}
                   folders={graphData.folders}
                   folderNodes={graphData.folderNodes}
+                  inputSources={graphData.inputs}
                   onNodeClick={(id) => select('node', id)}
                   fullscreen
                 />

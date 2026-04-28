@@ -12,6 +12,7 @@ interface GraphNode {
   type: string
   weight?: number
   created_at: string
+  input_id?: string | null
   x?: number
   y?: number
   vx?: number
@@ -79,6 +80,7 @@ export default function KnowledgeGraph({
   edges,
   folders,
   folderNodes,
+  inputSources = [],
   fullscreen = false,
   onNodeClick,
 }: {
@@ -86,6 +88,7 @@ export default function KnowledgeGraph({
   edges: GraphEdge[]
   folders: Folder[]
   folderNodes: FolderNode[]
+  inputSources?: Array<{ id: string; source_type: string }>
   fullscreen?: boolean
   onNodeClick?: (nodeId: string) => void
 }) {
@@ -140,8 +143,16 @@ export default function KnowledgeGraph({
   // Filter bar — narrows what the graph shows. 'all' = everything; node-type filters restrict to that
   // type; 'evidence' is special: when something is focused, traces every node that transitively
   // supports it via supports/refines edges (not just immediate neighbors).
-  type FilterMode = 'all' | 'concepts' | 'sources' | 'evidence'
+  type FilterMode = 'all' | 'concepts' | 'sources' | 'evidence' | 'peer-reviewed'
   const [filterMode, setFilterMode] = useState<FilterMode>('all')
+
+  // Map input_id → source_type for peer-reviewed filtering
+  const inputSourceMap = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const i of inputSources) map.set(i.id, i.source_type)
+    return map
+  }, [inputSources])
+  const PEER_REVIEWED_TYPES = new Set(['pubmed', 'research_paper'])
 
   // Connecting state — shift+drag from node to node
   const isConnecting = useRef(false)
@@ -341,6 +352,18 @@ export default function KnowledgeGraph({
       return reachable
     }
 
+    // Peer-reviewed: only nodes from pubmed/research_paper inputs
+    if (filterMode === 'peer-reviewed') {
+      const set = new Set<string>()
+      for (const n of nodes) {
+        if (n.input_id && PEER_REVIEWED_TYPES.has(inputSourceMap.get(n.input_id) || '')) {
+          set.add(n.id)
+        }
+      }
+      if (focusedNodeId) set.add(focusedNodeId)
+      return set
+    }
+
     // Type-based filters keep the focus visible regardless of type.
     const typeMatch: Record<string, (t: string) => boolean> = {
       concepts: t => t === 'concept',
@@ -352,7 +375,7 @@ export default function KnowledgeGraph({
     for (const n of nodes) if (match(n.type)) set.add(n.id)
     if (focusedNodeId) set.add(focusedNodeId)
     return set
-  }, [filterMode, focusedNodeId, edges, nodes])
+  }, [filterMode, focusedNodeId, edges, nodes, inputSourceMap])
 
   // Filter to visible — combine role-based visibility with the filter mask.
   const visibleNodes = useMemo(() => {
@@ -1387,7 +1410,7 @@ export default function KnowledgeGraph({
               transition-[max-width,opacity,margin,padding] duration-300 ease-out
             "
           >
-            {(['all', 'concepts', 'sources', 'evidence'] as const).map(m => {
+            {(['all', 'concepts', 'sources', 'evidence', 'peer-reviewed'] as const).map(m => {
               const disabled = m === 'evidence' && !focusedNodeId
               if (m === filterMode) return null
               return (
