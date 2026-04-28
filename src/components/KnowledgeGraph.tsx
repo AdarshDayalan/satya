@@ -47,6 +47,7 @@ const TYPE_COLORS: Record<string, string> = {
   question: '#fbbf24',
   source: '#34d399',
   synthesis: '#a78bfa',
+  belief: '#c4b5fd',
   raw: '#737373',
 }
 
@@ -91,6 +92,7 @@ export default function KnowledgeGraph({
     question: theme.nodeColors.question,
     evidence: theme.nodeColors.evidence,
     mechanism: theme.nodeColors.mechanism,
+    belief: theme.nodeColors.belief,
     raw: theme.nodeColors.raw,
   }
   const themeRef = useRef(theme)

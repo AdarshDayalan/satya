@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { recomputeStabilityFor } from '@/lib/beliefs'
 
 export async function POST(req: Request) {
   const supabase = await createClient()
@@ -26,5 +27,8 @@ export async function POST(req: Request) {
     .single()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
+
+  await recomputeStabilityFor(supabase, [from_node_id, to_node_id])
+
   return NextResponse.json(data)
 }

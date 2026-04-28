@@ -7,6 +7,7 @@ import {
   EXTRACT_IDEAS_PROMPT,
   DETECT_RELATIONSHIPS_PROMPT,
   SUGGEST_FOLDER_PROMPT,
+  PROMOTE_BELIEF_PROMPT,
 } from '@/lib/prompts'
 import { detectSource } from '@/lib/sources'
 import { extractContent } from '@/lib/extractors'
@@ -352,6 +353,118 @@ export async function POST(req: Request) {
       }
     }
 
+    // Belief layer: stamp beliefs extracted directly, recompute stability for
+    // any belief touched by new edges, and try to promote a belief from
+    // journal-source clusters.
+    const beliefIds = new Set<string>()
+    for (const n of createdNodes) {
+      if (n.type === 'belief') {
+        beliefIds.add(n.id)
+        await supabase
+          .from('nodes')
+          .update({ promoted_at: new Date().toISOString() })
+          .eq('id', n.id)
+      }
+    }
+
+    if (createdEdges.length > 0) {
+      const touched = new Set<string>()
+      for (const e of createdEdges) {
+        touched.add(e.from_node_id)
+        touched.add(e.to_node_id)
+      }
+      const { data: touchedBeliefs } = await supabase
+        .from('nodes')
+        .select('id')
+        .in('id', [...touched])
+        .eq('type', 'belief')
+      for (const b of touchedBeliefs ?? []) beliefIds.add(b.id)
+    }
+
+    for (const id of beliefIds) {
+      await supabase.rpc('recompute_belief_stability', { belief_id: id })
+    }
+
+    let promotedBelief = null
+    if (source.type === 'journal' && createdNodes.length > 0) {
+      try {
+        // Build a cluster: created nodes + their direct neighbors.
+        const clusterIds = new Set(createdNodes.map((n) => n.id))
+        for (const e of createdEdges) {
+          clusterIds.add(e.from_node_id)
+          clusterIds.add(e.to_node_id)
+        }
+
+        const { data: clusterNodes } = await supabase
+          .from('nodes')
+          .select('id, content, type, input_id')
+          .in('id', [...clusterIds])
+
+        // Only consider promotion if there's enough first-person material and
+        // no belief already exists in this cluster.
+        const journalNodes = (clusterNodes ?? []).filter(
+          (n) => n.type !== 'belief' && n.type !== 'evidence' && n.type !== 'mechanism'
+        )
+        const hasExistingBelief = (clusterNodes ?? []).some((n) => n.type === 'belief')
+
+        if (!hasExistingBelief && journalNodes.length >= 3) {
+          const promotePrompt = PROMOTE_BELIEF_PROMPT.replace(
+            '{{cluster_nodes}}',
+            JSON.stringify(journalNodes.map((n) => ({ id: n.id, content: n.content, type: n.type })))
+          )
+          const promoteResult = (await generateJson(model, promotePrompt)) as {
+            should_promote: boolean
+            belief: string
+            confidence: number
+            reason: string
+          }
+
+          if (promoteResult.should_promote && promoteResult.confidence >= 0.6) {
+            let beliefEmbedding: number[] | null = null
+            try {
+              beliefEmbedding = await generateEmbedding(aiConfig.apiKey, promoteResult.belief, aiConfig.provider as Provider)
+              if (beliefEmbedding && beliefEmbedding.length === 0) beliefEmbedding = null
+            } catch {
+              // embedding optional
+            }
+
+            const { data: belief } = await supabase
+              .from('nodes')
+              .insert({
+                user_id: user.id,
+                input_id: inputRecord.id,
+                content: promoteResult.belief,
+                type: 'belief',
+                summary: promoteResult.reason,
+                promoted_from: journalNodes.map((n) => n.id),
+                promoted_at: new Date().toISOString(),
+                embedding: beliefEmbedding ? JSON.stringify(beliefEmbedding) : null,
+              })
+              .select()
+              .single()
+
+            if (belief) {
+              promotedBelief = belief
+              const supportRows = journalNodes.map((n) => ({
+                user_id: user.id,
+                from_node_id: n.id,
+                to_node_id: belief.id,
+                relationship: 'supports',
+                strength: 0.7,
+                reason: 'fragment that contributed to this belief',
+              }))
+              if (supportRows.length > 0) {
+                await supabase.from('edges').insert(supportRows)
+              }
+              await supabase.rpc('recompute_belief_stability', { belief_id: belief.id })
+            }
+          }
+        }
+      } catch (beliefErr) {
+        console.error('[satya] Belief promotion failed:', beliefErr)
+      }
+    }
+
     await supabase
       .from('inputs')
       .update({ status: 'processed', processed_at: new Date().toISOString() })
@@ -362,6 +475,7 @@ export async function POST(req: Request) {
       nodes: createdNodes,
       edges: createdEdges,
       folder: folderSuggestion,
+      belief: promotedBelief,
     })
   } catch (err) {
     console.error('[satya] Processing failed:', err)

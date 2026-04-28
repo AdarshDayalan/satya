@@ -7,7 +7,7 @@ Return JSON:
 {
   "summary": "one line summary of the overall thesis",
   "source_type": "journal | youtube | article | research_paper | pubmed | reddit | instagram | blog | podcast | book | twitter | tiktok | newsletter | wikipedia | government",
-  "nodes": [{ "content": "...", "type": "concept | idea | question | evidence | mechanism", "source_url": "https://... or null", "perspectives": ["science", "..."] }]
+  "nodes": [{ "content": "...", "type": "concept | idea | question | evidence | mechanism | belief", "source_url": "https://... or null", "perspectives": ["science", "..."] }]
 }
 
 Rules:
@@ -17,11 +17,12 @@ Rules:
   Bad: "[two vague words]" (too vague to be useful)
 - Preserve causal chains: if A causes B causes C, extract all three so connections can form between them.
 - Types:
-  - "concept" = a core belief, principle, or truth claim
+  - "concept" = a core principle or truth claim about the world
   - "idea" = a specific insight, recommendation, or conclusion
   - "question" = an unresolved question
   - "evidence" = a specific study finding, statistic, or data point
   - "mechanism" = a biological, chemical, or causal pathway
+  - "belief" = a first-person stance the author HOLDS about themselves, others, or how they should live. Use ONLY for journal-style introspective writing where the author asserts something about their own identity, values, fears, or commitments. Phrases like "I believe", "I am", "I should", "I can't", "I always", "what matters to me is" are signals. A belief is NOT an external claim — it's something the author is taking as true about their own life.
 - If the text contains research citations or data, extract the key findings as "evidence" nodes.
 - If the text describes how something works (A → B → C), extract as "mechanism" nodes.
 - Do NOT merge nodes that are distinct steps in a causal chain — keep them separate.
@@ -115,3 +116,24 @@ Rules:
 - If the cluster spans a causal chain, name the chain.
 - Derive the name from what the nodes actually say, not from external assumptions.
 - Confidence 0.8+ = clear theme. 0.6-0.8 = loose theme. Below 0.6 = don't create.`
+
+export const PROMOTE_BELIEF_PROMPT = `You are reading a cluster of fragments from someone's journal and connected nodes. Your job is to decide if a stable first-person belief has emerged — something the author is implicitly or explicitly treating as true about themselves or how they live.
+
+Cluster:
+{{cluster_nodes}}
+
+Return JSON:
+{
+  "should_promote": true,
+  "belief": "one sentence in first person stating the belief, 10-20 words",
+  "confidence": 0.0,
+  "reason": "what in the cluster pointed to this belief, 1 sentence"
+}
+
+Rules:
+- A belief is a stance the author keeps returning to, not a one-off thought.
+- The belief sentence should be in the author's voice ("I ...") and assert something about their identity, values, fears, commitments, or how they should act.
+- Do NOT promote external claims about the world (those are concepts, not beliefs).
+- Do NOT promote tentative or exploratory thoughts. Only promote when the cluster shows recurrence or conviction.
+- Confidence 0.8+ = clear, repeated belief. 0.6-0.8 = forming belief. Below 0.6 = don't promote.
+- If no belief has stabilized, return should_promote: false.`
