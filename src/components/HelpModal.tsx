@@ -106,7 +106,7 @@ function Kbd({ children }: { children: React.ReactNode }) {
   return <kbd className="text-[10px] px-1.5 py-0.5 rounded bg-white/[0.06] border border-white/[0.08] text-white/60 font-mono">{children}</kbd>
 }
 
-function Def({ term, children }: { term: string; children: React.ReactNode }) {
+function Def({ term, children }: { term: React.ReactNode; children: React.ReactNode }) {
   return (
     <div className="flex gap-3 py-1.5 border-b border-white/[0.04] last:border-0">
       <span className="text-[12px] text-white/70 w-24 shrink-0 font-medium">{term}</span>
