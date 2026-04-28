@@ -48,7 +48,7 @@ export async function POST(req: Request) {
   }
 
   const body = await req.json()
-  const { input_id, raw_content: rawContentFromBody } = body
+  const { input_id, raw_content: rawContentFromBody, connection_hint } = body
 
   // If input_id provided, load the pre-saved input (from bulk capture)
   let raw_content: string
@@ -121,7 +121,7 @@ export async function POST(req: Request) {
     const extracted = (await generateJson(model, prompt)) as {
       summary: string
       source_type?: string
-      nodes: Array<{ content: string; type: string; source_url?: string | null }>
+      nodes: Array<{ content: string; type: string; source_url?: string | null; perspectives?: string[] }>
     }
 
     // Use AI-classified source type when URL detection gave a generic result
@@ -158,6 +158,7 @@ export async function POST(req: Request) {
           type: node.type || 'idea',
           summary: extracted.summary,
           source_url: node.source_url || null,
+          perspectives: node.perspectives || [],
           embedding: embedding ? JSON.stringify(embedding) : null,
         })
         .select()
@@ -193,10 +194,14 @@ export async function POST(req: Request) {
 
       if (candidates.length > 0) {
         try {
-          const relPrompt = DETECT_RELATIONSHIPS_PROMPT.replace(
+          let relPrompt = DETECT_RELATIONSHIPS_PROMPT.replace(
             '{{new_node}}',
             JSON.stringify({ id: savedNode.id, content: savedNode.content })
           ).replace('{{nearby_nodes}}', JSON.stringify(candidates))
+
+          if (connection_hint) {
+            relPrompt += `\n\nIMPORTANT — the user noticed a pattern. Bias toward finding connections related to: "${connection_hint}". Look harder for links to these topics, even indirect ones.`
+          }
 
           const parsed = (await generateJson(model, relPrompt)) as {
             relationships: Array<{

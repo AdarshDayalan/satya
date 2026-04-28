@@ -34,6 +34,8 @@ export default function InputBox() {
   const [error, setError] = useState<string | null>(null)
   const [listening, setListening] = useState(false)
   const [expanded, setExpanded] = useState(false)
+  const [connectionHint, setConnectionHint] = useState('')
+  const [showHint, setShowHint] = useState(false)
   const recognitionRef = useRef<SpeechRecognition | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const router = useRouter()
@@ -89,7 +91,7 @@ export default function InputBox() {
       const captureRes = await fetch('/api/capture', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ raw_content: submittedContent }),
+        body: JSON.stringify({ raw_content: submittedContent, connection_hint: connectionHint || undefined }),
       })
 
       if (!captureRes.ok) {
@@ -105,6 +107,8 @@ export default function InputBox() {
       setState('captured')
       setStatusMsg(isBulk ? `${count} sources captured` : 'captured')
       setContent('')
+      setConnectionHint('')
+      setShowHint(false)
       setExpanded(false)
       router.refresh()
 
@@ -127,7 +131,7 @@ export default function InputBox() {
         fetch('/api/process-input', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ raw_content: submittedContent }),
+          body: JSON.stringify({ raw_content: submittedContent, connection_hint: connectionHint || undefined }),
         }).then(async (res) => {
           if (res.ok) {
             const data = await res.json()
@@ -217,9 +221,27 @@ export default function InputBox() {
             )}
           </div>
           {expanded && !isUrlSource && (
-            <span className="text-[10px] text-neutral-700">markdown · ⌘Enter</span>
+            <div className="flex items-center gap-2">
+              <button type="button" onClick={() => setShowHint(!showHint)}
+                className={`text-[10px] transition-colors ${showHint || connectionHint ? 'text-purple-400/60' : 'text-neutral-700 hover:text-neutral-500'}`}>
+                {showHint ? '↑ hide hint' : '⟡ connection hint'}
+              </button>
+              <span className="text-[10px] text-neutral-700">markdown · ⌘Enter</span>
+            </div>
           )}
         </div>
+
+        {showHint && (
+          <div className="mt-2 px-1">
+            <input
+              value={connectionHint}
+              onChange={(e) => setConnectionHint(e.target.value)}
+              placeholder="e.g. relates to flow state, dopamine, ancient training..."
+              className="w-full px-3 py-1.5 bg-purple-400/[0.04] border border-purple-400/10 rounded-lg text-white/70 text-[12px] focus:outline-none focus:border-purple-400/20 placeholder-neutral-600"
+            />
+            <p className="text-[10px] text-neutral-700 mt-1 px-1">biases the AI to look harder for connections to these topics</p>
+          </div>
+        )}
 
         <div className="flex items-center justify-between mt-2 px-1">
           <button

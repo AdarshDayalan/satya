@@ -7,7 +7,7 @@ Return JSON:
 {
   "summary": "one line summary of the overall thesis",
   "source_type": "journal | youtube | article | research_paper | pubmed | reddit | instagram | blog | podcast | book | twitter | tiktok | newsletter | wikipedia | government",
-  "nodes": [{ "content": "...", "type": "concept | idea | question | evidence | mechanism", "source_url": "https://... or null" }]
+  "nodes": [{ "content": "...", "type": "concept | idea | question | evidence | mechanism", "source_url": "https://... or null", "perspectives": ["science", "..."] }]
 }
 
 Rules:
@@ -28,6 +28,22 @@ Rules:
 - Do NOT add your own opinions or caveats. Extract what the author wrote.
 - Quality > quantity, but don't under-extract dense content.
 - If the input contains URLs and research context from those URLs, set "source_url" to the specific URL the idea came from. If the idea comes from the user's own writing (not a linked source), set "source_url" to null.
+- "perspectives": tag each node with the domain lenses it draws from. Use 1-3 tags per node. These are the key perspectives — hard-to-fake truth signals that converge across domains:
+  - evolutionary: natural selection, adaptation, what survived millions of years
+  - historical: patterns across civilizations, what persisted through time
+  - scientific: peer-reviewed research, controlled experiments, measurable data
+  - anecdotal: personal experience, case studies, first-hand accounts
+  - economic: market forces, business incentives, what people pay for
+  - geographical: patterns across cultures/regions, environmental influence
+  - spiritual: contemplative traditions, meditation, consciousness, ancient wisdom
+  - athletic: physical performance, training, embodied knowledge
+  - psychological: cognition, behavior, mental models, clinical observation
+  - philosophical: logic, ethics, epistemology, first-principles reasoning
+  - biological: mechanisms of life, physiology, health, nutrition
+  - ecological: natural systems, ecosystems, environmental patterns
+  - cultural: art, music, storytelling, collective human expression
+  - technological: engineering, tools, systems design
+  Pick the most specific applicable lens. A node about "dopamine and meditation" → ["biological", "spiritual"]. A node about "Spartan training methods" → ["historical", "athletic"]. A node about "why organic food costs more" → ["economic", "ecological"].
 - "source_type": classify what kind of source this content is from based on its tone, structure, and origin. Use your best judgment:
   - "research_paper" / "pubmed" = academic studies, citations, formal methods
   - "government" = official health/policy guidance (CDC, WHO, FDA, etc.)

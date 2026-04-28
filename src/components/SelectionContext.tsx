@@ -8,7 +8,7 @@ interface Selection {
 }
 
 interface NodeFull {
-  id: string; content: string; type: string; weight?: number; created_at: string; input_id: string | null; source_url?: string | null
+  id: string; content: string; type: string; weight?: number; created_at: string; input_id: string | null; source_url?: string | null; perspectives?: string[]
 }
 
 interface Edge {

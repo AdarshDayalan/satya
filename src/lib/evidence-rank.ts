@@ -12,6 +12,7 @@
 interface Node {
   id: string
   input_id?: string | null
+  perspectives?: string[]
 }
 
 interface Edge {
@@ -145,6 +146,42 @@ export function computeEvidenceRank(
 
     for (const [id, w] of newWeights) {
       weights.set(id, w)
+    }
+  }
+
+  // Convergence bonus: nodes supported by diverse perspectives get multiplied.
+  // Collect perspectives from each node's supporting neighbors.
+  const nodeById = new Map(nodes.map(n => [n.id, n]))
+  const supportEdges = ['supports', 'evidence_for', 'mechanism_of', 'example_of', 'causes']
+
+  for (const node of nodes) {
+    // Gather unique perspectives from this node + its supporters
+    const allPerspectives = new Set<string>(node.perspectives || [])
+
+    for (const edge of edges) {
+      if (!supportEdges.includes(edge.relationship)) continue
+      // Check if this edge flows INTO this node
+      const flow = FLOW[edge.relationship]
+      if (!flow) continue
+      const targetId = flow.reverse ? edge.from_node_id : edge.to_node_id
+      if (targetId !== node.id) continue
+      const sourceId = flow.reverse ? edge.to_node_id : edge.from_node_id
+      const sourceNode = nodeById.get(sourceId)
+      if (sourceNode?.perspectives) {
+        for (const p of sourceNode.perspectives) allPerspectives.add(p)
+      }
+    }
+
+    // Convergence: 1 perspective = 1x, 2 = 1.2x, 3 = 1.5x, 4+ = 1.8x, 5+ = 2x
+    const diversityCount = allPerspectives.size
+    let multiplier = 1.0
+    if (diversityCount >= 5) multiplier = 2.0
+    else if (diversityCount >= 4) multiplier = 1.8
+    else if (diversityCount >= 3) multiplier = 1.5
+    else if (diversityCount >= 2) multiplier = 1.2
+
+    if (multiplier > 1.0) {
+      weights.set(node.id, (weights.get(node.id) || 1.0) * multiplier)
     }
   }
 

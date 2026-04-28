@@ -187,6 +187,17 @@ export default function SidePanel({ type, id, onClose, onNavigate, allNodes, ful
             <MarkdownContent content={nodeData.content} />
           </div>
 
+          {/* Perspective tags */}
+          {nodeData.perspectives && nodeData.perspectives.length > 0 && (
+            <div className="flex flex-wrap gap-1">
+              {nodeData.perspectives.map((p: string) => (
+                <span key={p} className="text-[9px] px-1.5 py-0.5 rounded-full bg-white/[0.04] border border-white/[0.06] text-neutral-400">
+                  {p}
+                </span>
+              ))}
+            </div>
+          )}
+
           {/* Source attribution */}
           {(nodeData.source_url || nodeData.input_id) && (
             <div className="space-y-1.5">
