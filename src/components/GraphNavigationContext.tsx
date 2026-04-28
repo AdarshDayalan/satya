@@ -46,7 +46,6 @@ export function GraphNavigationProvider({
   edges: GraphEdge[]
 }) {
   void _nodes
-  void _edges
   const [focusStack, setFocusStack] = useState<string[]>([])
 
   const focusedNodeId = focusStack.length > 0 ? focusStack[focusStack.length - 1] : null
@@ -54,14 +53,14 @@ export function GraphNavigationProvider({
   // Adjacency for the smart pushFocus logic — used to detect lateral moves to siblings of ancestors.
   const adjForPush = useMemo(() => {
     const map = new Map<string, Set<string>>()
-    for (const e of edges) {
+    for (const e of _edges) {
       if (!map.has(e.from_node_id)) map.set(e.from_node_id, new Set())
       if (!map.has(e.to_node_id)) map.set(e.to_node_id, new Set())
       map.get(e.from_node_id)!.add(e.to_node_id)
       map.get(e.to_node_id)!.add(e.from_node_id)
     }
     return map
-  }, [edges])
+  }, [_edges])
 
   const pushFocus = useCallback((nodeId: string) => {
     setFocusStack(prev => {
