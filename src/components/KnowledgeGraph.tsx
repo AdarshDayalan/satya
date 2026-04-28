@@ -884,6 +884,17 @@ export default function KnowledgeGraph({
           ctx.stroke()
         }
 
+        // Ring on the arrow-key-cycled child — visually marks which neighbor the detail panel is showing.
+        if (cycledChildIdRef.current === n.id) {
+          const pulse = 1 + Math.sin(time.current * 4) * 0.15
+          ctx.beginPath()
+          ctx.arc(n.x!, n.y!, r + 5 * pulse, 0, Math.PI * 2)
+          ctx.strokeStyle = '#fbbf24'
+          ctx.lineWidth = 2
+          ctx.globalAlpha = 0.9
+          ctx.stroke()
+        }
+
         // Label — focused node gets full content card, others get truncated labels
         const isFocus = role === 'focus'
         const showLabel = isHovered || isFocus || (role === 'child' && r >= 6) || (role === 'top' && r >= 8)
@@ -1167,41 +1178,47 @@ export default function KnowledgeGraph({
     }
   }, [router])
 
+  // Cycle state — preview a child via arrow keys without leaving the current focus.
+  const [cycledChildId, setCycledChildId] = useState<string | null>(null)
+  const cycledChildIdRef = useRef(cycledChildId)
+  cycledChildIdRef.current = cycledChildId
+  // Reset preview whenever focus or filter changes (the cyclable list is now different).
+  useEffect(() => { setCycledChildId(null) }, [focusedNodeId, filterMode])
+
   // Keyboard navigation
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (e.key === 'Escape' || e.key === 'Backspace') {
+        if (cycledChildIdRef.current) { setCycledChildId(null); return }
         if (graphNav && focusStack.length > 0) {
           e.preventDefault()
           graphNav.popFocus()
         }
       }
-      // Arrow keys to cycle through siblings at current level
+      // Arrow keys cycle through visible children of the focused node — preview only,
+      // no stack mutation. The right detail panel updates so the user can read source/info.
       if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-        if (!graphNav || !focusedNodeId) return
-        // Get siblings: children of parent (or top-level if no parent)
-        const parentId = focusStack.length >= 2 ? focusStack[focusStack.length - 2] : null
-        const siblings = parentId
-          ? (adj.get(parentId) || [])
-          : nodes.filter(n => n.type === 'concept').map(n => n.id)
-
-        if (siblings.length < 2) return
-        const currentIdx = siblings.indexOf(focusedNodeId)
-        if (currentIdx === -1) return
-
+        if (!focusedNodeId) return
+        // Cyclable list = children of focus that pass the current filter.
+        const candidates = (adj.get(focusedNodeId) || []).filter(id => finalVisibleIds.has(id))
+        if (candidates.length === 0) return
+        e.preventDefault()
+        const cur = cycledChildIdRef.current
+        const idx = cur ? candidates.indexOf(cur) : -1
         const dir = e.key === 'ArrowRight' ? 1 : -1
-        const nextIdx = (currentIdx + dir + siblings.length) % siblings.length
-        const nextId = siblings[nextIdx]
-
-        // Replace last element of focus stack
-        graphNav.jumpTo(focusStack.length - 2)
-        setTimeout(() => graphNav.pushFocus(nextId), 10)
+        const nextIdx = idx === -1
+          ? (dir > 0 ? 0 : candidates.length - 1)
+          : (idx + dir + candidates.length) % candidates.length
+        const nextId = candidates[nextIdx]
+        setCycledChildId(nextId)
+        // Open the detail panel for the previewed child.
+        if (onNodeClickRef.current) onNodeClickRef.current(nextId)
       }
     }
 
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [graphNav, focusStack, focusedNodeId, adj, nodes])
+  }, [graphNav, focusStack, focusedNodeId, adj, finalVisibleIds])
 
   async function handleConnect() {
     if (!pendingConnection) return
