@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 
-// POST /api/beliefs/promote — promote an existing node to a belief, or
-// demote it back to a regular concept if `demote: true`.
+// POST /api/self/promote — promote an existing node to a self node, or
+// demote it back to a regular idea if `demote: true`.
 //
 // Body: { node_id: string, demote?: boolean }
 export async function POST(req: Request) {
@@ -25,7 +25,7 @@ export async function POST(req: Request) {
   if (demote) {
     const { data, error } = await supabase
       .from('nodes')
-      .update({ type: 'concept', stability: null, promoted_at: null })
+      .update({ type: 'idea', stability: null, promoted_at: null })
       .eq('id', node_id)
       .eq('user_id', user.id)
       .select()
@@ -36,14 +36,14 @@ export async function POST(req: Request) {
 
   const { data, error } = await supabase
     .from('nodes')
-    .update({ type: 'belief', promoted_at: new Date().toISOString() })
+    .update({ type: 'self', promoted_at: new Date().toISOString() })
     .eq('id', node_id)
     .eq('user_id', user.id)
     .select()
     .single()
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
 
-  await supabase.rpc('recompute_belief_stability', { belief_id: node_id })
+  await supabase.rpc('recompute_self_stability', { self_id: node_id })
 
   const { data: refreshed } = await supabase
     .from('nodes')

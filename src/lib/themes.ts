@@ -22,7 +22,7 @@ export interface Theme {
     question: string
     evidence: string
     mechanism: string
-    belief: string
+    self: string
     raw: string
   }
   // Edge colors
@@ -55,7 +55,7 @@ export const THEMES: Record<string, Theme> = {
       question: '#fbbf24',
       evidence: '#34d399',
       mechanism: '#fb923c',
-      belief: '#c4b5fd',
+      self: '#c4b5fd',
       raw: '#737373',
     },
     edgeDefault: 'rgba(255,255,255,0.03)',
@@ -84,7 +84,7 @@ export const THEMES: Record<string, Theme> = {
       question: '#fde68a',
       evidence: '#6ee7b7',
       mechanism: '#fdba74',
-      belief: '#a5b4fc',
+      self: '#a5b4fc',
       raw: '#64748b',
     },
     edgeDefault: 'rgba(100,150,255,0.04)',
@@ -113,7 +113,7 @@ export const THEMES: Record<string, Theme> = {
       question: '#eab308',
       evidence: '#84cc16',
       mechanism: '#fb923c',
-      belief: '#fcd34d',
+      self: '#fcd34d',
       raw: '#78716c',
     },
     edgeDefault: 'rgba(200,100,50,0.04)',
@@ -142,7 +142,7 @@ export const THEMES: Record<string, Theme> = {
       question: '#fbbf24',
       evidence: '#2dd4bf',
       mechanism: '#86efac',
-      belief: '#d9f99d',
+      self: '#d9f99d',
       raw: '#6b7280',
     },
     edgeDefault: 'rgba(80,160,80,0.04)',
@@ -171,7 +171,7 @@ export const THEMES: Record<string, Theme> = {
       question: '#fde68a',
       evidence: '#86efac',
       mechanism: '#fda4af',
-      belief: '#f9a8d4',
+      self: '#f9a8d4',
       raw: '#9ca3af',
     },
     edgeDefault: 'rgba(200,100,140,0.04)',
@@ -200,7 +200,7 @@ export const THEMES: Record<string, Theme> = {
       question: '#d4d4d8',
       evidence: '#71717a',
       mechanism: '#a1a1aa',
-      belief: '#fafafa',
+      self: '#fafafa',
       raw: '#52525b',
     },
     edgeDefault: 'rgba(255,255,255,0.03)',
@@ -229,7 +229,7 @@ export const THEMES: Record<string, Theme> = {
       question: '#eab308',
       evidence: '#10b981',
       mechanism: '#8b5cf6',
-      belief: '#d946ef',
+      self: '#d946ef',
       raw: '#6366f1',
     },
     edgeDefault: 'rgba(130,80,255,0.05)',
@@ -258,7 +258,7 @@ export const THEMES: Record<string, Theme> = {
       question: '#d97706',
       evidence: '#059669',
       mechanism: '#7c3aed',
-      belief: '#a855f7',
+      self: '#a855f7',
       raw: '#6b7280',
     },
     edgeDefault: 'rgba(200,190,170,0.04)',

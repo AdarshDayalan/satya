@@ -7,7 +7,7 @@ Return JSON:
 {
   "summary": "one line summary of the overall thesis",
   "source_type": "journal | youtube | article | research_paper | pubmed | reddit | instagram | blog | podcast | book | twitter | tiktok | newsletter | wikipedia | government",
-  "nodes": [{ "content": "...", "type": "concept | idea | question | evidence | mechanism | belief", "source_url": "https://... or null", "perspectives": ["science", "..."] }]
+  "nodes": [{ "content": "...", "type": "concept | idea | question | evidence | mechanism | self", "source_url": "https://... or null", "perspectives": ["science", "..."] }]
 }
 
 Rules:
@@ -22,7 +22,7 @@ Rules:
   - "question" = an unresolved question
   - "evidence" = a specific study finding, statistic, or data point
   - "mechanism" = a biological, chemical, or causal pathway
-  - "belief" = a first-person stance the author HOLDS about themselves, others, or how they should live. Use ONLY for journal-style introspective writing where the author asserts something about their own identity, values, fears, or commitments. Phrases like "I believe", "I am", "I should", "I can't", "I always", "what matters to me is" are signals. A belief is NOT an external claim — it's something the author is taking as true about their own life.
+  - "self" = anything in the author's own first-person voice about themselves — thoughts, what they're inspired by, what they want to do, intentions, values, fears, what feels true to them, who they're becoming. Use for journal-style introspective writing. Signals: "I want", "I'm drawn to", "I keep thinking about", "what matters to me", "I'm afraid of", "I should", "I am". A self node is NOT an external claim — it's a fragment of the author's inner life.
 - If the text contains research citations or data, extract the key findings as "evidence" nodes.
 - If the text describes how something works (A → B → C), extract as "mechanism" nodes.
 - Do NOT merge nodes that are distinct steps in a causal chain — keep them separate.
@@ -117,7 +117,7 @@ Rules:
 - Derive the name from what the nodes actually say, not from external assumptions.
 - Confidence 0.8+ = clear theme. 0.6-0.8 = loose theme. Below 0.6 = don't create.`
 
-export const PROMOTE_BELIEF_PROMPT = `You are reading a cluster of fragments from someone's journal and connected nodes. Your job is to decide if a stable first-person belief has emerged — something the author is implicitly or explicitly treating as true about themselves or how they live.
+export const PROMOTE_SELF_PROMPT = `You are reading a cluster of fragments from someone's journal and connected nodes. Your job is to decide if a recurring first-person pattern has emerged — something the author keeps returning to about who they are, what they want, what inspires them, or how they're moving through life.
 
 Cluster:
 {{cluster_nodes}}
@@ -125,15 +125,16 @@ Cluster:
 Return JSON:
 {
   "should_promote": true,
-  "belief": "one sentence in first person stating the belief, 10-20 words",
+  "self": "one sentence in first person, 10-20 words",
   "confidence": 0.0,
-  "reason": "what in the cluster pointed to this belief, 1 sentence"
+  "reason": "what in the cluster pointed to this pattern, 1 sentence"
 }
 
 Rules:
-- A belief is a stance the author keeps returning to, not a one-off thought.
-- The belief sentence should be in the author's voice ("I ...") and assert something about their identity, values, fears, commitments, or how they should act.
-- Do NOT promote external claims about the world (those are concepts, not beliefs).
-- Do NOT promote tentative or exploratory thoughts. Only promote when the cluster shows recurrence or conviction.
-- Confidence 0.8+ = clear, repeated belief. 0.6-0.8 = forming belief. Below 0.6 = don't promote.
-- If no belief has stabilized, return should_promote: false.`
+- This is a "self" node — a recurring fragment of the author's inner life, not a truth claim about the world.
+- It can be a value, an intention, a desire, a fear, a recurring thought, a thing they keep being drawn to, a quiet resolve. Anything the author keeps surfacing.
+- The sentence should be in the author's voice ("I ...") and feel like something they would say about themselves.
+- Do NOT promote external claims about the world (those are concepts).
+- Do NOT promote one-off thoughts. Only promote when the cluster shows the pattern recurring across fragments.
+- Confidence 0.8+ = clearly recurring. 0.6-0.8 = forming. Below 0.6 = don't promote.
+- If nothing has stabilized yet, return should_promote: false.`

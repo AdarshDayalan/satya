@@ -26,18 +26,18 @@ const typeColors: Record<string, string> = {
   question: 'text-amber-400/60',
   source: 'text-green-400/60',
   synthesis: 'text-purple-400/60',
-  belief: 'text-violet-300/80',
+  self: 'text-violet-300/80',
   raw: 'text-neutral-500',
 }
 
-const NODE_TYPES = ['concept', 'idea', 'question', 'source', 'synthesis', 'belief']
+const NODE_TYPES = ['concept', 'idea', 'question', 'source', 'synthesis', 'self']
 
 function stabilityLabel(s: number | null | undefined): { label: string; color: string } {
-  if (s === null || s === undefined) return { label: 'untested', color: 'text-neutral-600' }
-  if (s >= 0.6) return { label: 'strengthening', color: 'text-emerald-400/80' }
-  if (s >= 0.2) return { label: 'holding', color: 'text-blue-400/80' }
-  if (s > -0.2) return { label: 'contested', color: 'text-amber-400/80' }
-  return { label: 'eroding', color: 'text-red-400/80' }
+  if (s === null || s === undefined) return { label: 'unanchored', color: 'text-neutral-600' }
+  if (s >= 0.6) return { label: 'recurring', color: 'text-emerald-400/80' }
+  if (s >= 0.2) return { label: 'active', color: 'text-blue-400/80' }
+  if (s > -0.2) return { label: 'in tension', color: 'text-amber-400/80' }
+  return { label: 'fading', color: 'text-red-400/80' }
 }
 
 interface Connection {
@@ -117,8 +117,8 @@ export default function NodeDetail({ node, connections, sourceInput, allNodes }:
     }).then(() => router.refresh())
   }
 
-  async function handlePromoteToBelief() {
-    await fetch('/api/beliefs/promote', {
+  async function handlePromoteToSelf() {
+    await fetch('/api/self/promote', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ node_id: node.id }),
@@ -126,8 +126,8 @@ export default function NodeDetail({ node, connections, sourceInput, allNodes }:
     router.refresh()
   }
 
-  async function handleDemoteBelief() {
-    await fetch('/api/beliefs/promote', {
+  async function handleDemoteSelf() {
+    await fetch('/api/self/promote', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ node_id: node.id, demote: true }),
@@ -182,14 +182,14 @@ export default function NodeDetail({ node, connections, sourceInput, allNodes }:
           <ActionMenu actions={[
             { label: 'Edit content', onClick: () => setEditing(true) },
             { label: 'Connect to...', onClick: () => setConnecting(true) },
-            ...(node.type === 'belief'
-              ? [{ label: 'Demote to concept', onClick: handleDemoteBelief }]
-              : [{ label: 'Promote to belief', onClick: handlePromoteToBelief }]),
+            ...(node.type === 'self'
+              ? [{ label: 'Unmark as self', onClick: handleDemoteSelf }]
+              : [{ label: 'Mark as self', onClick: handlePromoteToSelf }]),
             { label: 'Delete', onClick: () => setDeleting(true), danger: true },
           ]} />
         </div>
         <MarkdownContent content={node.content} />
-        {node.type === 'belief' && (() => {
+        {node.type === 'self' && (() => {
           const s = node.stability
           const { label, color } = stabilityLabel(s)
           const pct = s === null || s === undefined ? 0 : Math.round(((s + 1) / 2) * 100)

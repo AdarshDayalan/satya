@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { recomputeStabilityFor } from '@/lib/beliefs'
+import { recomputeStabilityFor } from '@/lib/self'
 
 export async function POST(req: Request) {
   const supabase = await createClient()
