@@ -133,7 +133,7 @@ export default function KnowledgeGraph({
   const dragStart = useRef({ x: 0, y: 0 })
   const dragMoved = useRef(false)
   const [tooltip, setTooltip] = useState<{ x: number; y: number; content: string; type: string } | null>(null)
-  const [layoutMode, setLayoutMode] = useState<LayoutMode>('hierarchy')
+  const [layoutMode, setLayoutMode] = useState<LayoutMode>('organic')
   const layoutModeRef = useRef<LayoutMode>(layoutMode)
   layoutModeRef.current = layoutMode
 
@@ -1547,7 +1547,27 @@ export default function KnowledgeGraph({
           className="w-7 h-7 flex items-center justify-center text-neutral-600 hover:text-white bg-white/[0.04] border border-white/[0.06] rounded-lg text-[14px] transition-colors"
         >−</button>
         <button
-          onClick={() => { cameraTransitioning.current = false; zoom.current = 1; pan.current = { x: 0, y: 0 } }}
+          onClick={() => {
+            const gn = graphNodes.current
+            if (gn.length === 0) return
+            // Weighted center biased toward concepts and high-weight nodes
+            let wx = 0, wy = 0, wTotal = 0
+            for (const n of gn) {
+              const w = n.type === 'concept' ? 4 : n.type === 'idea' ? 2 : 1
+              wx += n.x! * w; wy += n.y! * w; wTotal += w
+            }
+            const cx = wx / wTotal, cy = wy / wTotal
+            // Compute bounding box to auto-fit zoom
+            let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity
+            for (const n of gn) { minX = Math.min(minX, n.x!); maxX = Math.max(maxX, n.x!); minY = Math.min(minY, n.y!); maxY = Math.max(maxY, n.y!) }
+            const canvas = canvasRef.current
+            const pad = 80
+            const spanX = (maxX - minX) + pad * 2, spanY = (maxY - minY) + pad * 2
+            const fitZoom = canvas ? Math.min(canvas.width / window.devicePixelRatio / spanX, canvas.height / window.devicePixelRatio / spanY, 2) : 1
+            cameraTransitioning.current = false
+            zoom.current = Math.max(0.3, fitZoom)
+            pan.current = { x: -cx * zoom.current, y: -cy * zoom.current }
+          }}
           className="w-7 h-7 flex items-center justify-center text-neutral-600 hover:text-white bg-white/[0.04] border border-white/[0.06] rounded-lg text-[10px] transition-colors"
         >fit</button>
       </div>

@@ -14,12 +14,23 @@ export default function InputActions({ inputId, status }: InputActionsProps) {
   const router = useRouter()
   const [deleting, setDeleting] = useState(false)
   const [reprocessing, setReprocessing] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   async function handleReprocess() {
     setReprocessing(true)
-    const res = await fetch(`/api/inputs/${inputId}/reprocess`, { method: 'POST' })
+    setError(null)
+    try {
+      const res = await fetch(`/api/inputs/${inputId}/reprocess`, { method: 'POST' })
+      if (res.ok) {
+        router.refresh()
+      } else {
+        const data = await res.json().catch(() => ({ error: 'Reprocess failed' }))
+        setError(data.error || `Failed (${res.status})`)
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Network error')
+    }
     setReprocessing(false)
-    if (res.ok) router.refresh()
   }
 
   async function handleDelete() {
@@ -37,6 +48,7 @@ export default function InputActions({ inputId, status }: InputActionsProps) {
         >
           {reprocessing ? 'reprocessing...' : status === 'failed' ? 'retry' : 'reprocess'}
         </button>
+        {error && <span className="text-[11px] text-red-400">{error}</span>}
         <ActionMenu actions={[
           { label: 'Delete input & nodes', onClick: () => setDeleting(true), danger: true },
         ]} />

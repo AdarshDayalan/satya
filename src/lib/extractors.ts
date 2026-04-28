@@ -553,7 +553,7 @@ async function extractJournal(rawContent: string): Promise<ExtractionResult> {
         }
 
         // PMC special handling
-        const pmcMatch = url.match(/pmc\.ncbi\.nlm\.nih\.gov\/articles\/PMC(\d+)/)
+        const pmcMatch = url.match(/(?:pmc\.ncbi\.nlm\.nih\.gov|ncbi\.nlm\.nih\.gov\/pmc)\/articles\/PMC(\d+)/)
         if (pmcMatch) {
           const res = await fetch(
             `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=pmc&id=${pmcMatch[1]}&retmode=xml`,

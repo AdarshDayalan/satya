@@ -53,11 +53,14 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
 
   try {
     const source = detectSource(input.raw_content)
-    const { enrichedContent } = await extractContent(
+    const { enrichedContent, metadata: sourceMetadata } = await extractContent(
       input.raw_content,
       source.type,
-      { videoId: source.videoId, url: source.url }
+      { videoId: source.videoId, url: source.url, startTime: source.startTime, endTime: source.endTime, redditPath: source.redditPath, pubmedId: source.pubmedId, isPmc: source.isPmc, doi: source.doi }
     )
+
+    // Update source type and metadata
+    await supabase.from('inputs').update({ source_type: source.type, source_metadata: sourceMetadata }).eq('id', id)
 
     const model = getModel(aiConfig.apiKey, aiConfig.provider as Provider, aiConfig.model)
     const prompt = EXTRACT_IDEAS_PROMPT.replace('{{raw_content}}', enrichedContent)

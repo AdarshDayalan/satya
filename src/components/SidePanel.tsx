@@ -114,6 +114,7 @@ export default function SidePanel({ type, id, onClose, onNavigate, allNodes, ful
       if (isMember) next.delete(folderId); else next.add(folderId)
       return next
     })
+    setSavePickerOpen(false)
     if (isMember) {
       await fetch(`/api/folders/${folderId}/nodes?node_id=${id}`, { method: 'DELETE' })
     } else {
@@ -140,6 +141,7 @@ export default function SidePanel({ type, id, onClose, onNavigate, allNodes, ful
     if (newFolder?.id) {
       setAllFolders(prev => [{ id: newFolder.id, name: newFolder.name || name }, ...prev])
       setMemberFolderIds(prev => new Set(prev).add(newFolder.id))
+      setSavePickerOpen(false)
       await fetch(`/api/folders/${newFolder.id}/nodes`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

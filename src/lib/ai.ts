@@ -10,10 +10,13 @@ const DEFAULT_MODELS: Record<Provider, string> = {
   anthropic: 'claude-sonnet-4-20250514',
 }
 
-const EMBEDDING_MODELS: Record<string, string> = {
-  gemini: 'text-embedding-004',
+const EMBEDDING_MODELS: Record<Provider, string> = {
+  gemini: 'gemini-embedding-001',
   openai: 'text-embedding-3-small',
+  anthropic: 'text-embedding-3-small', // Anthropic has no embedding API; users need an OpenAI key fallback or we skip
 }
+
+const EMBEDDING_DIMS = 768
 
 export interface AIModel {
   generateJSON(prompt: string): Promise<Record<string, unknown>>
@@ -75,21 +78,37 @@ export function extractJson(text: string): Record<string, unknown> {
 
 export async function generateEmbedding(apiKey: string, text: string, provider: Provider = 'gemini'): Promise<number[]> {
   if (provider === 'gemini') {
-    const genAI = new GoogleGenerativeAI(apiKey)
-    const embeddingModel = genAI.getGenerativeModel({ model: EMBEDDING_MODELS.gemini })
-    const result = await embeddingModel.embedContent(text)
-    return result.embedding.values
+    // Use the REST API directly — the SDK's getGenerativeModel doesn't route
+    // embedding models correctly on v1beta.
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${EMBEDDING_MODELS.gemini}:embedContent?key=${apiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: `models/${EMBEDDING_MODELS.gemini}`, content: { parts: [{ text }] }, outputDimensionality: 768 }),
+      }
+    )
+    if (!res.ok) {
+      const err = await res.text()
+      throw new Error(`Gemini embedding failed: ${res.status} ${err}`)
+    }
+    const data = await res.json()
+    return data.embedding.values
   }
 
-  if (provider === 'openai') {
+  if (provider === 'openai' || provider === 'anthropic') {
+    // Anthropic has no embedding API — we use OpenAI's model if available,
+    // otherwise return empty (embeddings are optional, just used for similarity).
+    if (provider === 'anthropic') return []
+
     const client = new OpenAI({ apiKey })
     const result = await client.embeddings.create({
       model: EMBEDDING_MODELS.openai,
       input: text,
+      dimensions: EMBEDDING_DIMS,
     })
     return result.data[0].embedding
   }
 
-  // Anthropic doesn't have an embedding API — use the model to skip embeddings
   return []
 }

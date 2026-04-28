@@ -21,7 +21,7 @@ const INSTA_REGEX = /instagram\.com\/(reel|p)\/([\w-]+)/
 const ARXIV_REGEX = /arxiv\.org\/(?:abs|pdf)\/([\d.]+)/
 const REDDIT_REGEX = /reddit\.com\/(r\/\w+\/comments\/\w+[^\s]*)/
 const PUBMED_REGEX = /pubmed\.ncbi\.nlm\.nih\.gov\/(\d+)/
-const PMC_REGEX = /pmc\.ncbi\.nlm\.nih\.gov\/articles\/PMC(\d+)/
+const PMC_REGEX = /(?:pmc\.ncbi\.nlm\.nih\.gov|ncbi\.nlm\.nih\.gov\/pmc)\/articles\/PMC(\d+)/
 const DOI_REGEX = /10\.\d{4,}\/[^\s]+/
 const ACADEMIC_DOMAINS = [
   'link.springer.com', 'springer.com',

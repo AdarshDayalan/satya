@@ -63,7 +63,7 @@ export default async function InputPage({ params }: { params: Promise<{ id: stri
         <Link href="/home" className="text-[12px] text-neutral-600 hover:text-neutral-400 transition-colors">
           &larr; back
         </Link>
-        {!isJournal && <InputActions inputId={input.id} status={input.status} />}
+        <InputActions inputId={input.id} status={input.status} />
       </header>
 
       <main className="px-10 py-8 space-y-8 relative z-10 max-w-[900px]">
