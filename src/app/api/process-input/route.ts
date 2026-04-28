@@ -7,6 +7,7 @@ import {
   EXTRACT_IDEAS_PROMPT,
   DETECT_RELATIONSHIPS_PROMPT,
   SUGGEST_FOLDER_PROMPT,
+  PROMOTE_SELF_PROMPT,
 } from '@/lib/prompts'
 import { detectSource } from '@/lib/sources'
 import { extractContent } from '@/lib/extractors'
@@ -352,6 +353,118 @@ export async function POST(req: Request) {
       }
     }
 
+    // Self layer: stamp self nodes extracted directly, recompute stability
+    // for any self node touched by new edges, and try to promote a self
+    // node from journal-source clusters.
+    const selfIds = new Set<string>()
+    for (const n of createdNodes) {
+      if (n.type === 'self') {
+        selfIds.add(n.id)
+        await supabase
+          .from('nodes')
+          .update({ promoted_at: new Date().toISOString() })
+          .eq('id', n.id)
+      }
+    }
+
+    if (createdEdges.length > 0) {
+      const touched = new Set<string>()
+      for (const e of createdEdges) {
+        touched.add(e.from_node_id)
+        touched.add(e.to_node_id)
+      }
+      const { data: touchedSelves } = await supabase
+        .from('nodes')
+        .select('id')
+        .in('id', [...touched])
+        .eq('type', 'self')
+      for (const s of touchedSelves ?? []) selfIds.add(s.id)
+    }
+
+    for (const id of selfIds) {
+      await supabase.rpc('recompute_self_stability', { self_id: id })
+    }
+
+    let promotedSelf = null
+    if (source.type === 'journal' && createdNodes.length > 0) {
+      try {
+        // Build a cluster: created nodes + their direct neighbors.
+        const clusterIds = new Set(createdNodes.map((n) => n.id))
+        for (const e of createdEdges) {
+          clusterIds.add(e.from_node_id)
+          clusterIds.add(e.to_node_id)
+        }
+
+        const { data: clusterNodes } = await supabase
+          .from('nodes')
+          .select('id, content, type, input_id')
+          .in('id', [...clusterIds])
+
+        // Only consider promotion if there's enough first-person material and
+        // no self node already exists in this cluster.
+        const journalNodes = (clusterNodes ?? []).filter(
+          (n) => n.type !== 'self' && n.type !== 'evidence' && n.type !== 'mechanism'
+        )
+        const hasExistingSelf = (clusterNodes ?? []).some((n) => n.type === 'self')
+
+        if (!hasExistingSelf && journalNodes.length >= 3) {
+          const promotePrompt = PROMOTE_SELF_PROMPT.replace(
+            '{{cluster_nodes}}',
+            JSON.stringify(journalNodes.map((n) => ({ id: n.id, content: n.content, type: n.type })))
+          )
+          const promoteResult = (await generateJson(model, promotePrompt)) as {
+            should_promote: boolean
+            self: string
+            confidence: number
+            reason: string
+          }
+
+          if (promoteResult.should_promote && promoteResult.confidence >= 0.6) {
+            let selfEmbedding: number[] | null = null
+            try {
+              selfEmbedding = await generateEmbedding(aiConfig.apiKey, promoteResult.self, aiConfig.provider as Provider)
+              if (selfEmbedding && selfEmbedding.length === 0) selfEmbedding = null
+            } catch {
+              // embedding optional
+            }
+
+            const { data: selfNode } = await supabase
+              .from('nodes')
+              .insert({
+                user_id: user.id,
+                input_id: inputRecord.id,
+                content: promoteResult.self,
+                type: 'self',
+                summary: promoteResult.reason,
+                promoted_from: journalNodes.map((n) => n.id),
+                promoted_at: new Date().toISOString(),
+                embedding: selfEmbedding ? JSON.stringify(selfEmbedding) : null,
+              })
+              .select()
+              .single()
+
+            if (selfNode) {
+              promotedSelf = selfNode
+              const supportRows = journalNodes.map((n) => ({
+                user_id: user.id,
+                from_node_id: n.id,
+                to_node_id: selfNode.id,
+                relationship: 'supports',
+                strength: 0.7,
+                reason: 'fragment that contributed to this pattern',
+              }))
+              if (supportRows.length > 0) {
+                await supabase.from('edges').insert(supportRows)
+              }
+              await supabase.rpc('recompute_self_stability', { self_id: selfNode.id })
+            }
+          }
+        }
+      } catch (selfErr) {
+        console.error('[satya] Self promotion failed:', selfErr)
+      }
+    }
+
     await supabase
       .from('inputs')
       .update({ status: 'processed', processed_at: new Date().toISOString() })
@@ -362,6 +475,7 @@ export async function POST(req: Request) {
       nodes: createdNodes,
       edges: createdEdges,
       folder: folderSuggestion,
+      self: promotedSelf,
     })
   } catch (err) {
     console.error('[satya] Processing failed:', err)
