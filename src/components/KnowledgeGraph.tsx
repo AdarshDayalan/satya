@@ -123,6 +123,12 @@ export default function KnowledgeGraph({
   const panStart = useRef({ x: 0, y: 0 })
   const [tooltip, setTooltip] = useState<{ x: number; y: number; content: string; type: string } | null>(null)
 
+  // Layout mode — 'organic' lets nodes float loosely; 'hierarchy' enforces left-to-right direction.
+  // Auto-switches to 'hierarchy' on focus and 'organic' on defocus, but the user can override at any time.
+  const [layoutMode, setLayoutMode] = useState<'organic' | 'hierarchy'>('organic')
+  const layoutModeRef = useRef(layoutMode)
+  layoutModeRef.current = layoutMode
+
   // Connecting state — shift+drag from node to node
   const isConnecting = useRef(false)
   const connectFrom = useRef<GraphNode | null>(null)
@@ -145,6 +151,12 @@ export default function KnowledgeGraph({
   const focusedNodeId = graphNav?.focusedNodeId ?? null
   const pushFocusRef = useRef(graphNav?.pushFocus)
   pushFocusRef.current = graphNav?.pushFocus
+
+  // Auto-switch layout mode on focus change so the toggle bar always reflects current state.
+  // The user keeps full control: clicking the toggle overrides until the next focus change.
+  useEffect(() => {
+    setLayoutMode(focusedNodeId ? 'hierarchy' : 'organic')
+  }, [focusedNodeId])
 
   // Adjacency map (shared)
   const adj = useMemo(() => {
@@ -215,6 +227,44 @@ export default function KnowledgeGraph({
     }
     return { visibleNodeIds: visible, nodeRoles: roles, ancestorDepth: depth }
   }, [nodes, edges, focusedNodeId, focusStack, nodeRadii, adj])
+
+  // BFS depth from concept roots + per-depth Y slot — used by unfocused hierarchy mode.
+  // Each node gets a (depth, slot) so the layout is a clean grid: depth → X, slot → Y.
+  const rootLayout = useMemo(() => {
+    const depthMap = new Map<string, number>()
+    const slotMap = new Map<string, number>()
+    const groupSize = new Map<number, number>()
+    const queue: string[] = []
+    for (const n of nodes) {
+      if (n.type === 'concept') { depthMap.set(n.id, 0); queue.push(n.id) }
+    }
+    let head = 0
+    while (head < queue.length) {
+      const id = queue[head++]
+      const d = depthMap.get(id)!
+      for (const nbr of (adj.get(id) || [])) {
+        if (!depthMap.has(nbr)) { depthMap.set(nbr, d + 1); queue.push(nbr) }
+      }
+    }
+    // Unreachable nodes get a synthetic depth so they appear far right.
+    let maxDepth = 0
+    for (const d of depthMap.values()) if (d > maxDepth) maxDepth = d
+    for (const n of nodes) if (!depthMap.has(n.id)) depthMap.set(n.id, maxDepth + 1)
+    // Assign a Y slot per depth-group (deterministic by id so it's stable across renders).
+    const byDepth = new Map<number, string[]>()
+    for (const [id, d] of depthMap) {
+      if (!byDepth.has(d)) byDepth.set(d, [])
+      byDepth.get(d)!.push(id)
+    }
+    for (const [d, ids] of byDepth) {
+      ids.sort()
+      groupSize.set(d, ids.length)
+      ids.forEach((id, i) => slotMap.set(id, i))
+    }
+    return { depthMap, slotMap, groupSize }
+  }, [nodes, adj])
+  const rootLayoutRef = useRef(rootLayout)
+  rootLayoutRef.current = rootLayout
 
   // Filter to visible
   const visibleNodes = useMemo(() => nodes.filter(n => visibleNodeIds.has(n.id)), [nodes, visibleNodeIds])
@@ -339,8 +389,8 @@ export default function KnowledgeGraph({
     }
 
     // Seed hierarchy column positions on focus change so ancestors snap to the left,
-    // children to the right — physics smooths the rest.
-    if (focusedNodeId) {
+    // children to the right — physics smooths the rest. Only in hierarchy mode.
+    if (focusedNodeId && layoutModeRef.current === 'hierarchy') {
       const focusNode = graphNodes.current.find(n => n.id === focusedNodeId)
       if (focusNode && focusNode.x !== undefined && focusNode.y !== undefined) {
         const fx = focusNode.x
@@ -374,6 +424,27 @@ export default function KnowledgeGraph({
       }
     }
 
+    // Unfocused hierarchy snap — instantly grid-place every node so the toggle feels immediate.
+    if (!focusedNodeId && layoutModeRef.current === 'hierarchy') {
+      const canvas = canvasRef.current
+      const cxWorld = canvas ? (canvas.offsetWidth / 2 / zoom.current - pan.current.x / zoom.current) : 0
+      const cyWorld = canvas ? (canvas.offsetHeight / 2 / zoom.current - pan.current.y / zoom.current) : 0
+      const COL_W = 260
+      const ROWS_PER_SUBCOL = 8
+      const subColWidth = COL_W * 0.5
+      const ySpacing = 60
+      const { depthMap, slotMap } = rootLayout
+      for (const n of graphNodes.current) {
+        const d = depthMap.get(n.id) ?? 0
+        const slot = slotMap.get(n.id) ?? 0
+        const subCol = Math.floor(slot / ROWS_PER_SUBCOL)
+        const row = slot % ROWS_PER_SUBCOL
+        n.x = cxWorld + (d - 1) * COL_W * 1.4 + subCol * subColWidth
+        n.y = cyWorld + (row - (ROWS_PER_SUBCOL - 1) / 2) * ySpacing
+        n.vx = 0; n.vy = 0
+      }
+    }
+
     // Camera: center on focused node, using the *target* zoom so pan & zoom stay aligned during the lerp.
     if (focusedNodeId) {
       const focusNode = graphNodes.current.find(n => n.id === focusedNodeId)
@@ -393,7 +464,7 @@ export default function KnowledgeGraph({
       targetZoom.current = 1
       cameraTransitioning.current = true
     }
-  }, [nodeRoles, nodeRadii, focusedNodeId, syncNodes, ancestorDepth])
+  }, [nodeRoles, nodeRadii, focusedNodeId, syncNodes, ancestorDepth, layoutMode, rootLayout])
 
   // Camera transition flag — only lerp when actively transitioning
   const cameraTransitioning = useRef(false)
@@ -463,6 +534,7 @@ export default function KnowledgeGraph({
       const dragging = dragNode.current
 
       const isFocused = !!focusedNodeIdRef.current
+      const isHierarchy = layoutModeRef.current === 'hierarchy'
       const cxWorld = w / 2 / zoom.current - pan.current.x / zoom.current
       const cyWorld = h / 2 / zoom.current - pan.current.y / zoom.current
       // Hierarchy column spacing — ancestors flow leftward, children rightward.
@@ -479,7 +551,7 @@ export default function KnowledgeGraph({
         if (a === dragging) continue
         const aRole = nodeRolesRef.current.get(a.id)
 
-        if (isFocused && (aRole === 'ancestor' || aRole === 'child' || aRole === 'sibling')) {
+        if (isFocused && isHierarchy && (aRole === 'ancestor' || aRole === 'child' || aRole === 'sibling')) {
           // Pull toward target column — strong X spring keeps the directional flow obvious.
           let targetX = anchorX
           let yPullStrength = 0.0015
@@ -496,8 +568,22 @@ export default function KnowledgeGraph({
           }
           a.vx! += (targetX - a.x!) * 0.03
           a.vy! += (anchorY - a.y!) * yPullStrength
+        } else if (!isFocused && isHierarchy) {
+          // Unfocused hierarchy: wrap each depth-group into a sub-grid so it doesn't pile vertically.
+          const { depthMap, slotMap } = rootLayoutRef.current
+          const d = depthMap.get(a.id) ?? 0
+          const slot = slotMap.get(a.id) ?? 0
+          const ROWS_PER_SUBCOL = 8
+          const ySpacing = 60
+          const subColWidth = COL_W * 0.5
+          const subCol = Math.floor(slot / ROWS_PER_SUBCOL)
+          const row = slot % ROWS_PER_SUBCOL
+          const targetX = cxWorld + (d - 1) * COL_W * 1.4 + subCol * subColWidth
+          const targetY = cyWorld + (row - (ROWS_PER_SUBCOL - 1) / 2) * ySpacing
+          a.vx! += (targetX - a.x!) * 0.03
+          a.vy! += (targetY - a.y!) * 0.03
         } else {
-          // Default gravitational drift (organic feel) — toward camera center, but very weak.
+          // Organic drift — toward camera center, very weak so things stay where they settled.
           a.vx! += (cxWorld - a.x!) * 0.0001
           a.vy! += (cyWorld - a.y!) * 0.0001
         }
@@ -533,7 +619,7 @@ export default function KnowledgeGraph({
         // In hierarchy mode, weaken edge spring along X so columns dominate; keep Y so siblings still cluster.
         const aRole = nodeRolesRef.current.get(a.id)
         const bRole = nodeRolesRef.current.get(b.id)
-        const inHierarchyEdge = isFocused && (aRole === 'ancestor' || aRole === 'child' || aRole === 'sibling' || aRole === 'focus') && (bRole === 'ancestor' || bRole === 'child' || bRole === 'sibling' || bRole === 'focus')
+        const inHierarchyEdge = isFocused && isHierarchy && (aRole === 'ancestor' || aRole === 'child' || aRole === 'sibling' || aRole === 'focus') && (bRole === 'ancestor' || bRole === 'child' || bRole === 'sibling' || bRole === 'focus')
         const xMult = inHierarchyEdge ? 0.15 : 1
         const force = (dist - idealDist) * 0.002 * edge.strength
         a.vx! += (dx / dist) * force * xMult
@@ -1083,6 +1169,19 @@ export default function KnowledgeGraph({
         <span className="text-[10px] text-neutral-700">
           {focusStack.length > 0 ? 'esc to go back · ← → to cycle' : 'click to explore · shift+drag to connect'}
         </span>
+      </div>
+
+      {/* Layout mode toggle — same style as SpacesPanel cascade/flat */}
+      <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1 bg-[#0a0a0a]/80 border border-white/[0.06] rounded-lg p-0.5 backdrop-blur-sm">
+        {(['organic', 'hierarchy'] as const).map(m => (
+          <button
+            key={m}
+            onClick={() => setLayoutMode(m)}
+            className={`px-2.5 py-1 text-[10px] rounded ${layoutMode === m ? 'text-white/80 bg-white/[0.08]' : 'text-neutral-600 hover:text-neutral-400'}`}
+          >
+            {m}
+          </button>
+        ))}
       </div>
 
       {/* Search bar */}
