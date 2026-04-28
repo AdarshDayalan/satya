@@ -420,15 +420,9 @@ export default function SidePanel({ type, id, onClose, onNavigate, allNodes, ful
                 >
                   <p className="text-[12px] text-white/70 leading-snug">{c.node.content}</p>
                   <div className="flex items-center gap-2 mt-1">
-                    <span className={`text-[10px] ${relColors[c.relationship] || 'text-neutral-600'}`}>
+                    <span className={`text-[10px] whitespace-nowrap ${relColors[c.relationship] || 'text-neutral-600'}`}>
                       {c.relationship.replace('_', ' ')}
                     </span>
-                    {c.reason ? (
-                      <>
-                        <span className="text-neutral-800">·</span>
-                        <span className="text-[10px] text-neutral-700 truncate">{c.reason}</span>
-                      </>
-                    ) : null}
                   </div>
                 </button>
               ))}
