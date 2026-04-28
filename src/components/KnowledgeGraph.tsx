@@ -430,9 +430,26 @@ export default function KnowledgeGraph({
   // Update targets whenever roles change — runs on every focus change
   useEffect(() => {
     syncNodes() // Add/remove nodes
+    // In 'supporting' filter, the foreground is the *evidence* (raw observations + sources).
+    // Concepts and intermediate ideas/mechanisms are still drawn so the chain reads, but dimmed.
+    const isSupporting = filterMode === 'supporting' && !!focusedNodeId
+    const isEvidenceType = (t: string) => t === 'evidence' || t === 'source' || t === 'raw'
+
     for (const n of graphNodes.current) {
       const baseRadius = nodeRadii.get(n.id) || n.radius || 4
       const role = nodeRoles.get(n.id) || 'top'
+
+      if (isSupporting && n.id !== focusedNodeId) {
+        // Evidence: prominent. Intermediates: faded chain markers.
+        if (isEvidenceType(n.type)) {
+          n.targetRadius = baseRadius * 1.3
+          n.targetAlpha = 0.95
+        } else {
+          n.targetRadius = baseRadius * 0.55
+          n.targetAlpha = 0.25
+        }
+        continue
+      }
 
       n.targetRadius = role === 'focus' ? baseRadius * 2.0
         : role === 'child' ? baseRadius * 1.2
@@ -525,7 +542,7 @@ export default function KnowledgeGraph({
       targetZoom.current = 1
       cameraTransitioning.current = true
     }
-  }, [nodeRoles, nodeRadii, focusedNodeId, syncNodes, ancestorDepth, layoutMode, rootLayout])
+  }, [nodeRoles, nodeRadii, focusedNodeId, syncNodes, ancestorDepth, layoutMode, rootLayout, filterMode])
 
   // Camera transition flag — only lerp when actively transitioning
   const cameraTransitioning = useRef(false)
@@ -1240,28 +1257,34 @@ export default function KnowledgeGraph({
         </span>
       </div>
 
-      {/* Filter bar — narrows the graph by node type, plus a 'supporting' mode that traces all evidence behind the focused node. */}
-      <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1 bg-[#0a0a0a]/80 border border-white/[0.06] rounded-lg p-0.5 backdrop-blur-sm max-w-[calc(100vw-32px)] overflow-x-auto">
-        {(['all', 'concepts', 'evidence', 'questions', 'sources', 'supporting'] as const).map(m => {
-          const disabled = m === 'supporting' && !focusedNodeId
-          return (
-            <button
-              key={m}
-              onClick={() => !disabled && setFilterMode(m)}
-              disabled={disabled}
-              title={m === 'supporting' ? 'Show every node that transitively supports the focused claim' : undefined}
-              className={`shrink-0 px-2.5 py-1 text-[10px] rounded transition-colors ${
-                filterMode === m
-                  ? 'text-white/80 bg-white/[0.08]'
-                  : disabled
-                    ? 'text-neutral-800 cursor-not-allowed'
-                    : 'text-neutral-600 hover:text-neutral-400'
-              }`}
-            >
-              {m}
-            </button>
-          )
-        })}
+      {/* Filter chip — collapsed by default; expands on hover. Click any item to apply. */}
+      <div className="absolute bottom-3 left-1/2 -translate-x-1/2 group">
+        <div className="flex gap-1 bg-[#0a0a0a]/80 border border-white/[0.06] rounded-lg p-0.5 backdrop-blur-sm">
+          <span className="px-2.5 py-1 text-[10px] text-neutral-500 select-none">
+            <span className="text-neutral-700">filter ·</span> <span className="text-white/70">{filterMode}</span>
+          </span>
+          <div className="hidden group-hover:flex gap-1 border-l border-white/[0.06] pl-1">
+            {(['all', 'concepts', 'evidence', 'questions', 'sources', 'supporting'] as const).map(m => {
+              const disabled = m === 'supporting' && !focusedNodeId
+              if (m === filterMode) return null
+              return (
+                <button
+                  key={m}
+                  onClick={() => !disabled && setFilterMode(m)}
+                  disabled={disabled}
+                  title={m === 'supporting' ? 'Show every node that transitively supports the focused claim' : undefined}
+                  className={`shrink-0 px-2.5 py-1 text-[10px] rounded transition-colors ${
+                    disabled
+                      ? 'text-neutral-800 cursor-not-allowed'
+                      : 'text-neutral-500 hover:text-white/80 hover:bg-white/[0.05]'
+                  }`}
+                >
+                  {m}
+                </button>
+              )
+            })}
+          </div>
+        </div>
       </div>
 
       {/* Search bar */}
