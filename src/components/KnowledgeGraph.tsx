@@ -116,6 +116,8 @@ export default function KnowledgeGraph({
   const hoveredNode = useRef<GraphNode | null>(null)
   const dragNode = useRef<GraphNode | null>(null)
   const isDragging = useRef(false)
+  const didDrag = useRef(false)
+  const mouseDownPos = useRef({ x: 0, y: 0 })
   const mouse = useRef({ x: 0, y: 0 })
   const pan = useRef({ x: 0, y: 0 })
   const zoom = useRef(1)
@@ -152,11 +154,7 @@ export default function KnowledgeGraph({
   const pushFocusRef = useRef(graphNav?.pushFocus)
   pushFocusRef.current = graphNav?.pushFocus
 
-  // Auto-switch layout mode on focus change so the toggle bar always reflects current state.
-  // The user keeps full control: clicking the toggle overrides until the next focus change.
-  useEffect(() => {
-    setLayoutMode(focusedNodeId ? 'hierarchy' : 'organic')
-  }, [focusedNodeId])
+  // Default behavior is always 'organic' — the user explicitly opts into 'hierarchy' via the toggle.
 
   // Adjacency map (shared)
   const adj = useMemo(() => {
@@ -936,6 +934,10 @@ export default function KnowledgeGraph({
       }
 
       if (isDragging.current && dragNode.current) {
+        // Mark that the user actually dragged so mouseup can distinguish click from drag.
+        const dxFromDown = e.clientX - mouseDownPos.current.x
+        const dyFromDown = e.clientY - mouseDownPos.current.y
+        if (Math.abs(dxFromDown) > 3 || Math.abs(dyFromDown) > 3) didDrag.current = true
         dragNode.current.x = (mouse.current.x - pan.current.x) / zoom.current
         dragNode.current.y = (mouse.current.y - pan.current.y) / zoom.current
         dragNode.current.vx = 0
@@ -981,6 +983,8 @@ export default function KnowledgeGraph({
       if (node) {
         dragNode.current = node
         isDragging.current = true
+        didDrag.current = false
+        mouseDownPos.current = { x: e.clientX, y: e.clientY }
         canvas!.style.cursor = 'grabbing'
       } else {
         isPanning.current = true
@@ -1020,28 +1024,26 @@ export default function KnowledgeGraph({
       }
 
       if (isDragging.current && dragNode.current) {
-        const node = findNode(e.clientX, e.clientY)
-        if (node && node === dragNode.current) {
-          const dx = Math.abs((mouse.current.x - pan.current.x) / zoom.current - node.x!)
-          const dy = Math.abs((mouse.current.y - pan.current.y) / zoom.current - node.y!)
-          if (dx < 5 && dy < 5) {
-            const role = nodeRolesRef.current.get(node.id)
-            if (role === 'focus') {
-              // Already focused — open detail panel
-              if (onNodeClickRef.current) onNodeClickRef.current(node.id)
-            } else {
-              // Traverse into this node
-              if (pushFocusRef.current) pushFocusRef.current(node.id)
-              // Also open detail
-              if (onNodeClickRef.current) onNodeClickRef.current(node.id)
-            }
-          }
+        // If user didn't drag past the threshold, treat as a click → traverse to that node.
+        // A real drag just drops the node and does nothing else.
+        if (!didDrag.current) {
+          const node = dragNode.current
+          if (pushFocusRef.current) pushFocusRef.current(node.id)
         }
       }
       dragNode.current = null
       isDragging.current = false
+      didDrag.current = false
       isPanning.current = false
       canvas!.style.cursor = hoveredNode.current ? 'pointer' : 'grab'
+    }
+
+    // Double-click on a node opens the detail side panel (full info).
+    function onDoubleClick(e: MouseEvent) {
+      const node = findNode(e.clientX, e.clientY)
+      if (node && onNodeClickRef.current) {
+        onNodeClickRef.current(node.id)
+      }
     }
 
     function onWheel(e: WheelEvent) {
@@ -1071,6 +1073,7 @@ export default function KnowledgeGraph({
     canvas.addEventListener('mousemove', onMouseMove)
     canvas.addEventListener('mousedown', onMouseDown)
     canvas.addEventListener('mouseup', onMouseUp)
+    canvas.addEventListener('dblclick', onDoubleClick)
     canvas.addEventListener('wheel', onWheel, { passive: false })
     canvas.addEventListener('mouseleave', onMouseLeave)
 
@@ -1078,6 +1081,7 @@ export default function KnowledgeGraph({
       canvas.removeEventListener('mousemove', onMouseMove)
       canvas.removeEventListener('mousedown', onMouseDown)
       canvas.removeEventListener('mouseup', onMouseUp)
+      canvas.removeEventListener('dblclick', onDoubleClick)
       canvas.removeEventListener('wheel', onWheel)
       canvas.removeEventListener('mouseleave', onMouseLeave)
     }
@@ -1167,7 +1171,7 @@ export default function KnowledgeGraph({
           </button>
         )}
         <span className="text-[10px] text-neutral-700">
-          {focusStack.length > 0 ? 'esc to go back · ← → to cycle' : 'click to explore · shift+drag to connect'}
+          {focusStack.length > 0 ? 'esc to go back · ← → to cycle · double-click for details' : 'click to explore · double-click for details · shift+drag to connect'}
         </span>
       </div>
 

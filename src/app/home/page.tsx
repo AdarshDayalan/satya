@@ -46,6 +46,7 @@ export default async function HomePage() {
             folders={folders ?? []}
             folderNodes={folderNodesData ?? []}
             nodes={nodes ?? []}
+            edges={edges ?? []}
           />
         }
         headerActions={<HeaderActions />}
