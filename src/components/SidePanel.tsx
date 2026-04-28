@@ -498,9 +498,25 @@ export default function SidePanel({ type, id, onClose, onNavigate, allNodes, ful
             )}
           </div>
 
-          <div className="py-2">
-            <MarkdownContent content={cleanContent(inputData.raw_content)} />
-          </div>
+          {fullWidth ? (
+            <div className="py-2">
+              <MarkdownContent content={cleanContent(inputData.raw_content)} />
+            </div>
+          ) : (
+            <div className="py-2">
+              <p className="text-[12px] text-white/50 leading-relaxed line-clamp-4">
+                {inputData.raw_content.slice(0, 200)}{inputData.raw_content.length > 200 ? '...' : ''}
+              </p>
+              <a
+                href={`/inputs/${id}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-block mt-2 text-[11px] text-purple-400/60 hover:text-purple-400"
+              >
+                open full source →
+              </a>
+            </div>
+          )}
 
           <div className="flex gap-2">
             <button onClick={() => setEditing(true)} className="text-[11px] text-neutral-500 hover:text-white/70">edit</button>
