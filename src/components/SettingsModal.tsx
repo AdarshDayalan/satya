@@ -21,6 +21,10 @@ export default function SettingsModal({ open, onClose }: { open: boolean; onClos
   const [status, setStatus] = useState<'idle' | 'saved' | 'error'>('idle')
   const [trustWeights, setTrustWeights] = useState<Record<string, number>>({})
   const [tab, setTab] = useState<'ai' | 'trust'>('ai')
+  const [embProvider, setEmbProvider] = useState('')
+  const [embApiKey, setEmbApiKey] = useState('')
+  const [embMaskedKey, setEmbMaskedKey] = useState('')
+  const [hasEmbKey, setHasEmbKey] = useState(false)
 
   useEffect(() => {
     if (!open) return
@@ -33,6 +37,10 @@ export default function SettingsModal({ open, onClose }: { open: boolean; onClos
         setHasKey(data.has_key || false)
         setApiKey('')
         setTrustWeights(data.trust_weights || {})
+        setEmbProvider(data.embedding_provider || '')
+        setEmbMaskedKey(data.embedding_api_key_masked || '')
+        setHasEmbKey(data.has_embedding_key || false)
+        setEmbApiKey('')
       })
   }, [open])
 
@@ -42,7 +50,11 @@ export default function SettingsModal({ open, onClose }: { open: boolean; onClos
     const res = await fetch('/api/settings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ai_provider: provider, ai_model: model || undefined, ai_api_key: apiKey || undefined, trust_weights: trustWeights }),
+      body: JSON.stringify({
+        ai_provider: provider, ai_model: model || undefined, ai_api_key: apiKey || undefined,
+        trust_weights: trustWeights,
+        embedding_provider: embProvider || undefined, embedding_api_key: embApiKey || undefined,
+      }),
     })
     setSaving(false)
     setStatus(res.ok ? 'saved' : 'error')
@@ -50,6 +62,11 @@ export default function SettingsModal({ open, onClose }: { open: boolean; onClos
       setMaskedKey('•'.repeat(Math.max(0, apiKey.length - 4)) + apiKey.slice(-4))
       setHasKey(true)
       setApiKey('')
+    }
+    if (res.ok && embApiKey) {
+      setEmbMaskedKey('•'.repeat(Math.max(0, embApiKey.length - 4)) + embApiKey.slice(-4))
+      setHasEmbKey(true)
+      setEmbApiKey('')
     }
   }
 
@@ -176,6 +193,38 @@ export default function SettingsModal({ open, onClose }: { open: boolean; onClos
                 {selectedProvider.keyLabel}
               </a>
             </p>
+          </div>
+
+          {/* Embedding Provider (optional override) */}
+          <div className="pt-3 border-t border-white/[0.04] space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="text-[11px] text-neutral-500 uppercase tracking-widest">Embeddings</label>
+              <span className="text-[10px] text-neutral-700">optional — defaults to same provider</span>
+            </div>
+            <select
+              value={embProvider}
+              onChange={(e) => setEmbProvider(e.target.value)}
+              className="w-full px-3 py-2 bg-[#111] border border-white/[0.08] rounded-lg text-white/80 text-sm focus:outline-none focus:border-white/[0.15] [&>option]:bg-[#111] [&>option]:text-white/80"
+            >
+              <option value="">Same as AI provider</option>
+              {PROVIDERS.filter(p => p.id !== 'anthropic').map((p) => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+            {embProvider && embProvider !== provider && (
+              <div className="space-y-1.5">
+                {hasEmbKey && !embApiKey && (
+                  <p className="text-[12px] text-neutral-500 font-mono">{embMaskedKey}</p>
+                )}
+                <input
+                  type="password"
+                  value={embApiKey}
+                  onChange={(e) => setEmbApiKey(e.target.value)}
+                  placeholder={hasEmbKey ? 'enter new key to replace' : 'paste embedding API key'}
+                  className="w-full px-3 py-2 bg-white/[0.04] border border-white/[0.08] rounded-lg text-white/80 text-sm focus:outline-none focus:border-white/[0.15] placeholder-neutral-600"
+                />
+              </div>
+            )}
           </div>
         </div>
         )}

@@ -144,7 +144,7 @@ export async function POST(req: Request) {
     for (const node of extracted.nodes) {
       let embedding: number[] | null = null
       try {
-        embedding = await generateEmbedding(aiConfig.apiKey, node.content, aiConfig.provider as Provider)
+        embedding = await generateEmbedding(aiConfig.embeddingApiKey, node.content, aiConfig.embeddingProvider as Provider)
         if (embedding && embedding.length === 0) embedding = null
       } catch (embErr) {
         console.error('[satya] Embedding failed:', embErr)
@@ -422,7 +422,7 @@ export async function POST(req: Request) {
           if (promoteResult.should_promote && promoteResult.confidence >= 0.6) {
             let selfEmbedding: number[] | null = null
             try {
-              selfEmbedding = await generateEmbedding(aiConfig.apiKey, promoteResult.self, aiConfig.provider as Provider)
+              selfEmbedding = await generateEmbedding(aiConfig.embeddingApiKey, promoteResult.self, aiConfig.embeddingProvider as Provider)
               if (selfEmbedding && selfEmbedding.length === 0) selfEmbedding = null
             } catch {
               // embedding optional

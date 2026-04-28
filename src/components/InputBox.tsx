@@ -115,8 +115,13 @@ export default function InputBox() {
       const count = captureData.count || 1
 
       // Instant feedback — clear input immediately
+      const embeddedUrls = captureData.embedded_urls || 0
       setState('captured')
-      setStatusMsg(isBulk ? `${count} sources captured` : 'captured')
+      setStatusMsg(
+        embeddedUrls > 0
+          ? `captured · ${embeddedUrls} sources detected`
+          : isBulk ? `${count} sources captured` : 'captured'
+      )
       setContent('')
       setConnectionHint('')
       setShowHint(false)
@@ -124,39 +129,44 @@ export default function InputBox() {
       if (textareaRef.current) textareaRef.current.style.height = ''
       router.refresh()
 
-      // Step 2: Process each input in background (fire and forget)
+      // Step 2: Process all inputs in parallel (journal + each child source)
       setState('processing')
-      setStatusMsg(isBulk ? `extracting meaning from ${count} sources...` : 'extracting meaning...')
+      setStatusMsg(
+        embeddedUrls > 0
+          ? `extracting meaning from journal + ${embeddedUrls} sources...`
+          : isBulk ? `extracting meaning from ${count} sources...` : 'extracting meaning...'
+      )
 
-      // Process each input by id (single or bulk)
       const inputs = captureData.inputs || [captureData.input]
+      let processed = 0
       const processPromises = inputs.map((input: { id: string }) =>
         fetch('/api/process-input', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ input_id: input.id, connection_hint: connectionHint || undefined }),
-        }).then(r => r.ok ? r.json() : null).catch(() => null)
+        }).then(r => r.ok ? r.json() : null).then(data => {
+          processed++
+          if (inputs.length > 1) {
+            setStatusMsg(`processing ${processed}/${inputs.length} sources...`)
+          }
+          return data
+        }).catch(() => { processed++; return null })
       )
 
       Promise.allSettled(processPromises).then((results) => {
-        if (!isBulk) {
-          const data = results[0]?.status === 'fulfilled' ? results[0].value : null
-          if (data) {
-            const nodes = data.nodes?.length ?? 0
-            const edges = data.edges?.length ?? 0
-            const folder = data.folder?.name
-            setStatusMsg(
-              `${nodes} nodes · ${edges} connections` +
-              (folder ? ` · theme: ${folder}` : '')
-            )
-            setState('done')
-          } else {
-            setStatusMsg('extraction failed — input saved')
-            setState('error')
-          }
-        } else {
-          setStatusMsg(`${count} sources processed`)
+        const successful = results.filter(r => r.status === 'fulfilled' && r.value).length
+        const totalNodes = results.reduce((sum, r) => sum + (r.status === 'fulfilled' && r.value ? (r.value.nodes?.length ?? 0) : 0), 0)
+        const totalEdges = results.reduce((sum, r) => sum + (r.status === 'fulfilled' && r.value ? (r.value.edges?.length ?? 0) : 0), 0)
+
+        if (totalNodes > 0) {
+          setStatusMsg(`${totalNodes} nodes · ${totalEdges} connections` + (inputs.length > 1 ? ` · ${successful}/${inputs.length} sources` : ''))
           setState('done')
+        } else if (successful > 0) {
+          setStatusMsg(`${successful} sources processed`)
+          setState('done')
+        } else {
+          setStatusMsg('extraction failed — input saved')
+          setState('error')
         }
         router.refresh()
         setTimeout(() => { setState('idle'); setStatusMsg('') }, 5000)

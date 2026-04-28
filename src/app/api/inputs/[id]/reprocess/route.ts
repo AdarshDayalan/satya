@@ -75,7 +75,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     for (const node of extracted.nodes) {
       let embedding: number[] | null = null
       try {
-        embedding = await generateEmbedding(aiConfig.apiKey, node.content, aiConfig.provider as Provider)
+        embedding = await generateEmbedding(aiConfig.embeddingApiKey, node.content, aiConfig.embeddingProvider as Provider)
         if (embedding && embedding.length === 0) embedding = null
       } catch (embErr) {
         console.error('[satya] Embedding failed:', embErr)
