@@ -63,6 +63,7 @@ export default function SidePanel({ type, id, onClose, onNavigate, allNodes, ful
   const [editing, setEditing] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [connecting, setConnecting] = useState(false)
+  const [reprocessing, setReprocessing] = useState(false)
 
   // Read directly from store — instant, no fetch
   const nodeData = type === 'node' ? store.nodes.get(id) ?? null : null
@@ -207,10 +208,17 @@ export default function SidePanel({ type, id, onClose, onNavigate, allNodes, ful
     await fetch(`/api/inputs/${id}`, { method: 'DELETE' })
   }
 
+  async function handleReprocess() {
+    setReprocessing(true)
+    await fetch(`/api/inputs/${id}/reprocess`, { method: 'POST' })
+    setReprocessing(false)
+    window.location.reload()
+  }
+
   return (
-    <div className={`${fullWidth ? 'flex-1' : 'w-96 shrink-0'} border-l border-white/[0.06] bg-[#080808] overflow-y-auto flex flex-col h-full overflow-x-hidden`} style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
+    <div className={`${fullWidth ? 'flex-1' : 'w-72 shrink-0'} border-l border-white/[0.04] bg-[#060606] overflow-y-auto flex flex-col h-full overflow-x-hidden`} style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
       {/* Header */}
-      <div className="flex items-center justify-between px-4 h-9 border-b border-white/[0.06] shrink-0">
+      <div className="flex items-center justify-between px-3 h-8 border-b border-white/[0.04] shrink-0">
         <div className="flex items-center gap-2">
           <button onClick={goBack} className="text-neutral-600 hover:text-white/70 text-[11px]">←</button>
           <span className="text-[10px] text-neutral-500 uppercase tracking-wider font-medium">
@@ -221,7 +229,7 @@ export default function SidePanel({ type, id, onClose, onNavigate, allNodes, ful
       </div>
 
       {type === 'node' && nodeData ? (
-        <div className="p-4 space-y-5 flex-1 overflow-y-auto">
+        <div className="px-3 py-3 space-y-4 flex-1 overflow-y-auto">
           <div className="space-y-2">
             <div className="flex items-center gap-2 flex-wrap">
               <span className={`text-[10px] uppercase tracking-widest ${typeColors[nodeData.type] || 'text-neutral-600'}`}>
@@ -342,12 +350,12 @@ export default function SidePanel({ type, id, onClose, onNavigate, allNodes, ful
               : null
             const cred = input ? getCredibility(input.source_type) : null
             return (
-              <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] overflow-hidden">
+              <div className="overflow-hidden">
                 {sourceImage && (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={sourceImage} alt="" className="w-full h-32 object-cover border-b border-white/[0.04]" />
                 )}
-                <div className="p-3 space-y-2">
+                <div className="pt-2 space-y-2">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-[9px] uppercase tracking-widest text-neutral-500">Source</span>
                     <span className="text-neutral-800">·</span>
@@ -416,7 +424,7 @@ export default function SidePanel({ type, id, onClose, onNavigate, allNodes, ful
                 <button
                   key={i}
                   onClick={() => onNavigate('node', c.node.id)}
-                  className="w-full text-left px-3 py-2 rounded-lg bg-white/[0.02] border border-white/[0.04] hover:bg-white/[0.05]"
+                  className="w-full text-left py-1.5 hover:text-white/90 transition-colors"
                 >
                   <p className="text-[12px] text-white/70 leading-snug">{c.node.content}</p>
                   <div className="flex items-center gap-2 mt-1">
@@ -462,7 +470,7 @@ export default function SidePanel({ type, id, onClose, onNavigate, allNodes, ful
           <CreateEdgeModal open={connecting} onClose={() => setConnecting(false)} onCreated={() => {}} nodes={allNodes} fromNodeId={nodeData.id} />
         </div>
       ) : type === 'input' && inputData ? (
-        <div className="p-4 space-y-5 flex-1 overflow-y-auto">
+        <div className="px-3 py-3 space-y-4 flex-1 overflow-y-auto">
           <div className="space-y-2">
             <div className="flex items-center gap-2">
               <span className={`text-[10px] uppercase tracking-widest font-medium ${SOURCE_CONFIG[inputData.source_type]?.color || 'text-white/50'}`}>
@@ -490,12 +498,15 @@ export default function SidePanel({ type, id, onClose, onNavigate, allNodes, ful
             )}
           </div>
 
-          <div className="bg-white/[0.02] border border-white/[0.04] rounded-lg px-3 py-2.5">
+          <div className="py-2">
             <MarkdownContent content={cleanContent(inputData.raw_content)} />
           </div>
 
           <div className="flex gap-2">
             <button onClick={() => setEditing(true)} className="text-[11px] text-neutral-500 hover:text-white/70">edit</button>
+            <button onClick={handleReprocess} disabled={reprocessing} className="text-[11px] text-neutral-500 hover:text-purple-400/70 disabled:opacity-40">
+              {reprocessing ? 'reprocessing...' : inputData.status === 'failed' ? 'retry' : 'reprocess'}
+            </button>
             <button onClick={() => setDeleting(true)} className="text-[11px] text-neutral-500 hover:text-red-400/70">delete</button>
           </div>
 
@@ -506,7 +517,7 @@ export default function SidePanel({ type, id, onClose, onNavigate, allNodes, ful
                 <button
                   key={node.id}
                   onClick={() => onNavigate('node', node.id)}
-                  className="w-full text-left px-3 py-2 rounded-lg bg-white/[0.02] border border-white/[0.04] hover:bg-white/[0.05]"
+                  className="w-full text-left py-1.5 hover:text-white/90 transition-colors"
                 >
                   <p className="text-[12px] text-white/70 leading-snug">{node.content}</p>
                   <span className={`text-[10px] mt-1 inline-block ${typeColors[node.type] || 'text-neutral-600'}`}>
