@@ -1199,10 +1199,15 @@ export default function KnowledgeGraph({
       // no stack mutation. The right detail panel updates so the user can read source/info.
       if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
         if (!focusedNodeId) return
-        // Cyclable list = unique direct neighbors of focus that pass the current filter (excluding focus itself).
+        // Build cycle list:
+        // - 'all' → direct neighbors only (keeps the cycle scoped to the immediate context)
+        // - any filter → every visible node passing the filter (so 'evidence' tours every transitive supporter)
         const seen = new Set<string>()
         const candidates: string[] = []
-        for (const id of (adj.get(focusedNodeId) || [])) {
+        const source: Iterable<string> = filterMode === 'all'
+          ? (adj.get(focusedNodeId) || [])
+          : finalVisibleIds
+        for (const id of source) {
           if (id === focusedNodeId || seen.has(id)) continue
           if (!finalVisibleIds.has(id)) continue
           seen.add(id)
@@ -1225,7 +1230,7 @@ export default function KnowledgeGraph({
 
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [graphNav, focusStack, focusedNodeId, adj, finalVisibleIds])
+  }, [graphNav, focusStack, focusedNodeId, adj, finalVisibleIds, filterMode])
 
   async function handleConnect() {
     if (!pendingConnection) return
