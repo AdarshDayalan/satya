@@ -1199,8 +1199,15 @@ export default function KnowledgeGraph({
       // no stack mutation. The right detail panel updates so the user can read source/info.
       if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
         if (!focusedNodeId) return
-        // Cyclable list = children of focus that pass the current filter.
-        const candidates = (adj.get(focusedNodeId) || []).filter(id => finalVisibleIds.has(id))
+        // Cyclable list = unique direct neighbors of focus that pass the current filter (excluding focus itself).
+        const seen = new Set<string>()
+        const candidates: string[] = []
+        for (const id of (adj.get(focusedNodeId) || [])) {
+          if (id === focusedNodeId || seen.has(id)) continue
+          if (!finalVisibleIds.has(id)) continue
+          seen.add(id)
+          candidates.push(id)
+        }
         if (candidates.length === 0) return
         e.preventDefault()
         const cur = cycledChildIdRef.current
