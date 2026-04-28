@@ -531,8 +531,8 @@ async function extractJournal(rawContent: string): Promise<ExtractionResult> {
 
   const metadata: Record<string, unknown> = { embeddedUrls: urls.length }
 
-  // Fetch context from embedded links (parallel, max 5 to avoid slowdown)
-  const urlsToFetch = urls.slice(0, 5)
+  // Fetch context from embedded links (parallel, max 15 to cover research dumps)
+  const urlsToFetch = urls.slice(0, 15)
   const contexts = await Promise.allSettled(
     urlsToFetch.map(async (url) => {
       try {

@@ -58,7 +58,21 @@ function parseTimestamp(ts: string): number {
   return parts.length === 2 ? parts[0] * 60 + parts[1] : parts[0] * 3600 + parts[1] * 60 + parts[2]
 }
 
+export function countEmbeddedUrls(content: string): number {
+  return (content.match(/https?:\/\/[^\s]+/g) || []).length
+}
+
 export function detectSource(content: string): DetectedSource {
+  // If content has multiple URLs AND substantial prose, treat as journal with embedded sources.
+  // This ensures all links get individually scraped via extractJournal.
+  const allUrls = content.match(/https?:\/\/[^\s]+/g) || []
+  if (allUrls.length > 1) {
+    const proseChars = content.replace(/https?:\/\/[^\s]+/g, '').replace(/\s+/g, ' ').trim().length
+    if (proseChars > 50) {
+      return { type: 'journal', url: null }
+    }
+  }
+
   const ytMatch = content.match(YT_REGEX)
   if (ytMatch) {
     const result: DetectedSource = { type: 'youtube', url: content.match(URL_REGEX)?.[0] ?? null, videoId: ytMatch[1] }

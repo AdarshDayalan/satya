@@ -18,6 +18,12 @@ const SOURCE_LABELS: Record<SourceType, { label: string; color: string }> = {
 }
 
 function detectSourceType(text: string): SourceType {
+  // Multiple URLs + prose = journal (all links scraped individually)
+  const urls = text.match(/https?:\/\/[^\s]+/g) || []
+  if (urls.length > 1) {
+    const prose = text.replace(/https?:\/\/[^\s]+/g, '').replace(/\s+/g, ' ').trim()
+    if (prose.length > 50) return 'journal'
+  }
   if (/(?:youtube\.com\/watch|youtu\.be\/)/.test(text)) return 'youtube'
   if (/reddit\.com\/r\//.test(text)) return 'reddit'
   if (/pubmed\.ncbi\.nlm\.nih\.gov\/\d+/.test(text)) return 'pubmed'
@@ -25,6 +31,10 @@ function detectSourceType(text: string): SourceType {
   if (/arxiv\.org\//.test(text)) return 'research_paper'
   if (/https?:\/\//.test(text)) return 'article'
   return 'journal'
+}
+
+function countUrls(text: string): number {
+  return (text.match(/https?:\/\/[^\s]+/g) || []).length
 }
 
 export default function InputBox() {
@@ -43,6 +53,7 @@ export default function InputBox() {
   const detectedSource = useMemo(() => detectSourceType(content), [content])
   const sourceInfo = SOURCE_LABELS[detectedSource]
   const isUrlSource = detectedSource !== 'journal'
+  const urlCount = useMemo(() => countUrls(content), [content])
 
   function autoResize() {
     const ta = textareaRef.current
@@ -117,25 +128,20 @@ export default function InputBox() {
       setState('processing')
       setStatusMsg(isBulk ? `extracting meaning from ${count} sources...` : 'extracting meaning...')
 
-      // For bulk, process each input independently
+      // Process each input by id (single or bulk)
       const inputs = captureData.inputs || [captureData.input]
       const processPromises = inputs.map((input: { id: string }) =>
         fetch('/api/process-input', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ input_id: input.id }),
-        }).catch(() => null)
+          body: JSON.stringify({ input_id: input.id, connection_hint: connectionHint || undefined }),
+        }).then(r => r.ok ? r.json() : null).catch(() => null)
       )
 
-      // Also fire with raw_content for single input (backward compat)
-      if (!isBulk) {
-        fetch('/api/process-input', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ raw_content: submittedContent, connection_hint: connectionHint || undefined }),
-        }).then(async (res) => {
-          if (res.ok) {
-            const data = await res.json()
+      Promise.allSettled(processPromises).then((results) => {
+        if (!isBulk) {
+          const data = results[0]?.status === 'fulfilled' ? results[0].value : null
+          if (data) {
             const nodes = data.nodes?.length ?? 0
             const edges = data.edges?.length ?? 0
             const folder = data.folder?.name
@@ -144,26 +150,17 @@ export default function InputBox() {
               (folder ? ` · theme: ${folder}` : '')
             )
             setState('done')
-            router.refresh()
           } else {
             setStatusMsg('extraction failed — input saved')
             setState('error')
           }
-          setTimeout(() => { setState('idle'); setStatusMsg('') }, 5000)
-        }).catch(() => {
-          setStatusMsg('extraction failed — input saved')
-          setState('error')
-          setTimeout(() => { setState('idle'); setStatusMsg('') }, 5000)
-        })
-      } else {
-        // For bulk, just wait for all and show summary
-        Promise.allSettled(processPromises).then(() => {
+        } else {
           setStatusMsg(`${count} sources processed`)
           setState('done')
-          router.refresh()
-          setTimeout(() => { setState('idle'); setStatusMsg('') }, 5000)
-        })
-      }
+        }
+        router.refresh()
+        setTimeout(() => { setState('idle'); setStatusMsg('') }, 5000)
+      })
 
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save')
@@ -209,6 +206,11 @@ export default function InputBox() {
             {isUrlSource && (
               <span className={`text-[11px] font-medium ${sourceInfo.color} animate-fade-up`}>
                 {sourceInfo.label} detected
+              </span>
+            )}
+            {!isUrlSource && urlCount > 0 && (
+              <span className="text-[11px] font-medium text-cyan-400 animate-fade-up">
+                {urlCount} {urlCount === 1 ? 'link' : 'links'} detected
               </span>
             )}
             {!isUrlSource && (
