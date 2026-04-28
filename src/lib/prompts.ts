@@ -11,7 +11,8 @@ Return JSON:
 }
 
 Rules:
-- Extract 5-15 nodes depending on density of the input.
+- Extract 5-30 nodes depending on density and length of the input. Short content: 5-10. Long, multi-section research entries: 15-30.
+- ALWAYS extract overarching "concept" nodes that capture the BIG IDEA tying sections together. If the text covers multiple mechanisms supporting one thesis, create a concept node for the thesis itself. These are the high-level truth claims that become graph hubs.
 - Node content should be a COMPLETE claim or fact — 10-25 words. Not just a label.
   Good: "[specific claim with enough context to stand alone]"
   Bad: "[two vague words]" (too vague to be useful)
