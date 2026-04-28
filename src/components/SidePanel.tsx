@@ -269,42 +269,68 @@ export default function SidePanel({ type, id, onClose, onNavigate, allNodes, ful
             </div>
           )}
 
-          {/* Source attribution */}
-          {(nodeData.source_url || nodeData.input_id) && (
-            <div className="space-y-1.5">
-              {nodeData.source_url && (
-                <a
-                  href={nodeData.source_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-1.5 text-[11px] text-blue-400/60 hover:text-blue-400 truncate"
-                >
-                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.2" className="shrink-0">
-                    <path d="M6 1h3v3M9 1L5 5M4 1H1v8h8V6" />
-                  </svg>
-                  {(() => { try { return new URL(nodeData.source_url).hostname } catch { return nodeData.source_url } })()}
-                </a>
-              )}
-              {nodeData.input_id && (
-                <button
-                  onClick={() => onNavigate('input', nodeData.input_id!)}
-                  className="flex items-center gap-1.5 text-[11px] text-neutral-500 hover:text-white/60"
-                >
-                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.2" className="shrink-0">
-                    <rect x="1" y="1" width="8" height="8" rx="1" />
-                    <path d="M3 3.5h4M3 5.5h3" />
-                  </svg>
-                  {nodeData.source_url ? 'from journal entry' : 'view source'}
-                </button>
-              )}
-            </div>
-          )}
+          {/* Source showcase — featured card for evidence/article/source nodes */}
+          {(() => {
+            const input = nodeData.input_id ? store.inputs.get(nodeData.input_id) : null
+            if (!nodeData.source_url && !input) return null
+            const hostname = nodeData.source_url
+              ? (() => { try { return new URL(nodeData.source_url!).hostname } catch { return nodeData.source_url } })()
+              : null
+            const sourceType = input?.source_type || 'source'
+            const sourceTitle = (input?.source_metadata?.title as string | undefined) || null
+            const cred = input ? getCredibility(input.source_type) : null
+            return (
+              <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-3 space-y-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[9px] uppercase tracking-widest text-neutral-500">Source</span>
+                  <span className="text-neutral-800">·</span>
+                  <span className={`text-[10px] ${SOURCE_CONFIG[sourceType]?.color || 'text-white/50'}`}>
+                    {SOURCE_CONFIG[sourceType]?.label || sourceType}
+                  </span>
+                  {cred && (
+                    <>
+                      <span className="text-neutral-800">·</span>
+                      <span className="text-[9px] text-neutral-500">{cred.tier}</span>
+                    </>
+                  )}
+                </div>
+                {sourceTitle && (
+                  <p className="text-[12px] text-white/80 leading-snug">{sourceTitle}</p>
+                )}
+                <div className="flex flex-col gap-1.5">
+                  {nodeData.source_url && (
+                    <a
+                      href={nodeData.source_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1.5 text-[11px] text-blue-400/70 hover:text-blue-400 truncate"
+                    >
+                      <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.2" className="shrink-0">
+                        <path d="M6 1h3v3M9 1L5 5M4 1H1v8h8V6" />
+                      </svg>
+                      {hostname}
+                    </a>
+                  )}
+                  {nodeData.input_id && (
+                    <button
+                      onClick={() => onNavigate('input', nodeData.input_id!)}
+                      className="flex items-center gap-1.5 text-[11px] text-neutral-500 hover:text-white/70"
+                    >
+                      <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.2" className="shrink-0">
+                        <rect x="1" y="1" width="8" height="8" rx="1" />
+                        <path d="M3 3.5h4M3 5.5h3" />
+                      </svg>
+                      {nodeData.source_url ? 'open journal entry' : 'open full source'}
+                    </button>
+                  )}
+                </div>
+              </div>
+            )
+          })()}
 
-          <div className="flex gap-2 items-center">
-            <button onClick={() => setEditing(true)} className="text-[11px] text-neutral-500 hover:text-white/70">edit</button>
-            <button onClick={() => setConnecting(true)} className="text-[11px] text-neutral-500 hover:text-white/70">connect</button>
-            <button onClick={() => setDeleting(true)} className="text-[11px] text-neutral-500 hover:text-red-400/70">delete</button>
-            <div className="relative ml-auto">
+          {/* Favorites star — kept near content for quick access; edit/connect/delete moved to bottom */}
+          <div className="flex items-center">
+            <div className="relative">
               <button
                 onClick={() => setSavePickerOpen(o => !o)}
                 title="Save to a favorites folder"
@@ -401,6 +427,13 @@ export default function SidePanel({ type, id, onClose, onNavigate, allNodes, ful
             ) : (
               <p className="text-[11px] text-neutral-700 italic">no attachments</p>
             )}
+          </div>
+
+          {/* Bottom action row — edit / connect / delete live here so the source + content read first. */}
+          <div className="pt-3 mt-2 border-t border-white/[0.04] flex gap-3 items-center">
+            <button onClick={() => setEditing(true)} className="text-[11px] text-neutral-500 hover:text-white/70">edit</button>
+            <button onClick={() => setConnecting(true)} className="text-[11px] text-neutral-500 hover:text-white/70">connect</button>
+            <button onClick={() => setDeleting(true)} className="text-[11px] text-neutral-500 hover:text-red-400/70 ml-auto">delete</button>
           </div>
 
           <EditModal isOpen={editing} onClose={() => setEditing(false)} onSave={handleSaveNode} title="Edit node" initialValue={nodeData.content} />

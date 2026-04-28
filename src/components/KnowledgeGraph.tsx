@@ -1197,9 +1197,14 @@ export default function KnowledgeGraph({
       // no stack mutation. The right detail panel updates so the user can read source/info.
       if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
         if (!focusedNodeId) return
-        // Build cycle list:
-        // - 'all' → direct neighbors only (keeps the cycle scoped to the immediate context)
-        // - any filter → every visible node passing the filter (so 'evidence' tours every transitive supporter)
+        // Build cycle list. Each filter tours only its semantic class:
+        // - 'all'       → direct neighbors of the focus (immediate context)
+        // - 'concepts'  → visible concepts (filterMask already type-restricts)
+        // - 'sources'   → visible sources (filterMask already type-restricts)
+        // - 'evidence'  → only the actual evidence nodes among the transitive supporters
+        //                 (skip intermediate concepts/ideas/mechanisms — they were just scaffolding)
+        const isEvidenceType = (t: string) => t === 'evidence' || t === 'source' || t === 'raw'
+        const nodeMap = new Map(nodes.map(n => [n.id, n.type]))
         const seen = new Set<string>()
         const candidates: string[] = []
         const source: Iterable<string> = filterMode === 'all'
@@ -1208,6 +1213,8 @@ export default function KnowledgeGraph({
         for (const id of source) {
           if (id === focusedNodeId || seen.has(id)) continue
           if (!finalVisibleIds.has(id)) continue
+          // Evidence filter narrows further to actual evidence-type nodes.
+          if (filterMode === 'evidence' && !isEvidenceType(nodeMap.get(id) || '')) continue
           seen.add(id)
           candidates.push(id)
         }
