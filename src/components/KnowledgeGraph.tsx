@@ -125,11 +125,16 @@ export default function KnowledgeGraph({
   const panStart = useRef({ x: 0, y: 0 })
   const [tooltip, setTooltip] = useState<{ x: number; y: number; content: string; type: string } | null>(null)
 
-  // Layout mode — 'organic' lets nodes float loosely; 'hierarchy' enforces left-to-right direction.
-  // Auto-switches to 'hierarchy' on focus and 'organic' on defocus, but the user can override at any time.
-  const [layoutMode, setLayoutMode] = useState<'organic' | 'hierarchy'>('organic')
+  // Layout mode — kept internally as 'organic' (no UI toggle anymore — user opts into filters instead).
+  const [layoutMode] = useState<'organic' | 'hierarchy'>('organic')
   const layoutModeRef = useRef(layoutMode)
   layoutModeRef.current = layoutMode
+
+  // Filter bar — narrows what the graph shows. 'all' = everything; node-type filters restrict to that
+  // type; 'supporting' is special: when something is focused, traces every node that transitively
+  // supports it via supports/refines edges (not just immediate neighbors).
+  type FilterMode = 'all' | 'concepts' | 'evidence' | 'questions' | 'sources' | 'supporting'
+  const [filterMode, setFilterMode] = useState<FilterMode>('all')
 
   // Connecting state — shift+drag from node to node
   const isConnecting = useRef(false)
@@ -155,6 +160,11 @@ export default function KnowledgeGraph({
   pushFocusRef.current = graphNav?.pushFocus
 
   // Default behavior is always 'organic' — the user explicitly opts into 'hierarchy' via the toggle.
+
+  // 'supporting' filter only makes sense when focused — drop back to 'all' on defocus.
+  useEffect(() => {
+    if (!focusedNodeId && filterMode === 'supporting') setFilterMode('all')
+  }, [focusedNodeId, filterMode])
 
   // Adjacency map (shared)
   const adj = useMemo(() => {
@@ -264,24 +274,77 @@ export default function KnowledgeGraph({
   const rootLayoutRef = useRef(rootLayout)
   rootLayoutRef.current = rootLayout
 
-  // Filter to visible
-  const visibleNodes = useMemo(() => nodes.filter(n => visibleNodeIds.has(n.id)), [nodes, visibleNodeIds])
+  // Filter mask — overlays on top of role-based visibility. 'all' = no extra filtering.
+  // Special 'supporting' mode: when focused, BFS via supports/refines edges to find every node
+  // that transitively backs the focused claim (including ones not directly connected).
+  const filterMask = useMemo(() => {
+    if (filterMode === 'all') return null
+
+    if (filterMode === 'supporting') {
+      if (!focusedNodeId) return null
+      // BFS upstream via supporting edges. An edge "X supports Y" means X is evidence for Y;
+      // we want every X that reaches the focus, so traverse incoming supports.
+      const incoming = new Map<string, string[]>()
+      for (const e of edges) {
+        if (e.relationship === 'supports' || e.relationship === 'refines' || e.relationship === 'example_of') {
+          if (!incoming.has(e.to_node_id)) incoming.set(e.to_node_id, [])
+          incoming.get(e.to_node_id)!.push(e.from_node_id)
+        }
+      }
+      const reachable = new Set<string>([focusedNodeId])
+      const stack = [focusedNodeId]
+      while (stack.length) {
+        const id = stack.pop()!
+        for (const src of (incoming.get(id) || [])) {
+          if (!reachable.has(src)) { reachable.add(src); stack.push(src) }
+        }
+      }
+      return reachable
+    }
+
+    // Type-based filters keep the focus visible regardless of type.
+    const typeMatch: Record<string, (t: string) => boolean> = {
+      concepts: t => t === 'concept',
+      evidence: t => t === 'evidence' || t === 'idea' || t === 'mechanism',
+      questions: t => t === 'question',
+      sources: t => t === 'source',
+    }
+    const match = typeMatch[filterMode]
+    if (!match) return null
+    const set = new Set<string>()
+    for (const n of nodes) if (match(n.type)) set.add(n.id)
+    if (focusedNodeId) set.add(focusedNodeId)
+    return set
+  }, [filterMode, focusedNodeId, edges, nodes])
+
+  // Filter to visible — combine role-based visibility with the filter mask.
+  const visibleNodes = useMemo(() => {
+    return nodes.filter(n => visibleNodeIds.has(n.id) && (!filterMask || filterMask.has(n.id)))
+  }, [nodes, visibleNodeIds, filterMask])
+  const finalVisibleIds = useMemo(() => new Set(visibleNodes.map(n => n.id)), [visibleNodes])
   // In focused mode, only render edges that touch the focus or run along the ancestor chain.
   // Child-to-child and sibling-to-sibling edges create unreadable spaghetti, so we hide them.
+  // Exception: in 'supporting' filter mode, show every supporting edge so the chain is visible.
   const visibleEdges = useMemo(() => {
+    if (filterMode === 'supporting' && focusedNodeId) {
+      return edges.filter(e =>
+        finalVisibleIds.has(e.from_node_id) && finalVisibleIds.has(e.to_node_id) &&
+        (e.relationship === 'supports' || e.relationship === 'refines' || e.relationship === 'example_of')
+      )
+    }
     if (!focusedNodeId) {
-      return edges.filter(e => visibleNodeIds.has(e.from_node_id) && visibleNodeIds.has(e.to_node_id))
+      return edges.filter(e => finalVisibleIds.has(e.from_node_id) && finalVisibleIds.has(e.to_node_id))
     }
     const stackSet = new Set(focusStack)
     return edges.filter(e => {
-      if (!visibleNodeIds.has(e.from_node_id) || !visibleNodeIds.has(e.to_node_id)) return false
+      if (!finalVisibleIds.has(e.from_node_id) || !finalVisibleIds.has(e.to_node_id)) return false
       // Always show edges touching the focused node.
       if (e.from_node_id === focusedNodeId || e.to_node_id === focusedNodeId) return true
       // Show edges along the ancestor chain (ancestor ↔ ancestor or ancestor ↔ focus).
       if (stackSet.has(e.from_node_id) && stackSet.has(e.to_node_id)) return true
       return false
     })
-  }, [edges, visibleNodeIds, focusedNodeId, focusStack])
+  }, [edges, finalVisibleIds, focusedNodeId, focusStack, filterMode])
 
   // Count hidden children per visible node
   const hiddenChildCount = useMemo(() => {
@@ -1024,11 +1087,13 @@ export default function KnowledgeGraph({
       }
 
       if (isDragging.current && dragNode.current) {
-        // If user didn't drag past the threshold, treat as a click → traverse to that node.
+        // If user didn't drag past the threshold, treat as a click → traverse to that node
+        // AND open the detail side panel so source/attachments are immediately visible.
         // A real drag just drops the node and does nothing else.
         if (!didDrag.current) {
           const node = dragNode.current
           if (pushFocusRef.current) pushFocusRef.current(node.id)
+          if (onNodeClickRef.current) onNodeClickRef.current(node.id)
         }
       }
       dragNode.current = null
@@ -1175,17 +1240,28 @@ export default function KnowledgeGraph({
         </span>
       </div>
 
-      {/* Layout mode toggle — same style as SpacesPanel cascade/flat */}
-      <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1 bg-[#0a0a0a]/80 border border-white/[0.06] rounded-lg p-0.5 backdrop-blur-sm">
-        {(['organic', 'hierarchy'] as const).map(m => (
-          <button
-            key={m}
-            onClick={() => setLayoutMode(m)}
-            className={`px-2.5 py-1 text-[10px] rounded ${layoutMode === m ? 'text-white/80 bg-white/[0.08]' : 'text-neutral-600 hover:text-neutral-400'}`}
-          >
-            {m}
-          </button>
-        ))}
+      {/* Filter bar — narrows the graph by node type, plus a 'supporting' mode that traces all evidence behind the focused node. */}
+      <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1 bg-[#0a0a0a]/80 border border-white/[0.06] rounded-lg p-0.5 backdrop-blur-sm max-w-[calc(100vw-32px)] overflow-x-auto">
+        {(['all', 'concepts', 'evidence', 'questions', 'sources', 'supporting'] as const).map(m => {
+          const disabled = m === 'supporting' && !focusedNodeId
+          return (
+            <button
+              key={m}
+              onClick={() => !disabled && setFilterMode(m)}
+              disabled={disabled}
+              title={m === 'supporting' ? 'Show every node that transitively supports the focused claim' : undefined}
+              className={`shrink-0 px-2.5 py-1 text-[10px] rounded transition-colors ${
+                filterMode === m
+                  ? 'text-white/80 bg-white/[0.08]'
+                  : disabled
+                    ? 'text-neutral-800 cursor-not-allowed'
+                    : 'text-neutral-600 hover:text-neutral-400'
+              }`}
+            >
+              {m}
+            </button>
+          )
+        })}
       </div>
 
       {/* Search bar */}
