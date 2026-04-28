@@ -2,7 +2,7 @@
 
 import { SelectionProvider } from './SelectionContext'
 import { useSelection } from './SelectionContext'
-import { GraphNavigationProvider } from './GraphNavigationContext'
+import { GraphNavigationProvider, useGraphNavigation } from './GraphNavigationContext'
 import KnowledgeGraph from './KnowledgeGraph'
 import GraphSidebar from './GraphSidebar'
 import SidePanel from './SidePanel'
@@ -47,14 +47,21 @@ function GraphSidebarWrapper({ nodes, edges }: { nodes: GraphWithPanelProps['nod
 // Right detail panel — opens when something is selected (e.g., via double-click on canvas).
 function DetailPanelWrapper({ allNodes }: { allNodes: Array<{ id: string; content: string; type: string }> }) {
   const { selection, select, clearSelection } = useSelection()
+  const { pushFocus } = useGraphNavigation()
   if (!selection) return null
+  // Clicking a connection in the panel should ALSO move the graph view there — same effect as
+  // clicking the node on the canvas. We push focus on the graph and update the selected detail node.
+  const navigate = (kind: 'node' | 'input', id: string) => {
+    if (kind === 'node') pushFocus(id)
+    select(kind, id)
+  }
   return (
     <SidePanel
       key={`${selection.type}-${selection.id}`}
       type={selection.type}
       id={selection.id}
       onClose={clearSelection}
-      onNavigate={select}
+      onNavigate={navigate}
       allNodes={allNodes}
     />
   )
