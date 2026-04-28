@@ -110,6 +110,7 @@ export default function InputBox() {
       setConnectionHint('')
       setShowHint(false)
       setExpanded(false)
+      if (textareaRef.current) textareaRef.current.style.height = ''
       router.refresh()
 
       // Step 2: Process each input in background (fire and forget)

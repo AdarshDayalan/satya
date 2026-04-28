@@ -950,15 +950,18 @@ export default function KnowledgeGraph({
           ctx.stroke()
         }
 
-        // Ring on the arrow-key-cycled child — visually marks which neighbor the detail panel is showing.
+        // Glow on the arrow-key-cycled child — soft radial halo instead of hard ring.
         if (cycledChildIdRef.current === n.id) {
-          const pulse = 1 + Math.sin(time.current * 4) * 0.15
+          const pulse = 1 + Math.sin(time.current * 4) * 0.12
+          const glowR = r + 10 * pulse
+          const grad = ctx.createRadialGradient(n.x!, n.y!, r, n.x!, n.y!, glowR)
+          grad.addColorStop(0, color + 'aa')
+          grad.addColorStop(1, color + '00')
           ctx.beginPath()
-          ctx.arc(n.x!, n.y!, r + 5 * pulse, 0, Math.PI * 2)
-          ctx.strokeStyle = '#fbbf24'
-          ctx.lineWidth = 2
+          ctx.arc(n.x!, n.y!, glowR, 0, Math.PI * 2)
+          ctx.fillStyle = grad
           ctx.globalAlpha = 0.9
-          ctx.stroke()
+          ctx.fill()
         }
 
         // Label — focused node gets full content card, others get truncated labels

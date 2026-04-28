@@ -8,6 +8,7 @@ import SpacesPanel from './SpacesPanel'
 import KnowledgeGraph from './KnowledgeGraph'
 import SidePanel from './SidePanel'
 import { GraphNavigationProvider } from './GraphNavigationContext'
+import HelpModal from './HelpModal'
 
 type NavKey = 'home' | 'graph' | 'files' | 'publish'
 
@@ -26,6 +27,7 @@ interface AppShellProps {
 export default function AppShell({ children, filesPanel, headerActions, graphData }: AppShellProps) {
   const { selection, select, clearSelection, store } = useSelection()
   const [activeNav, setActiveNav] = useState<NavKey>('home')
+  const [helpOpen, setHelpOpen] = useState(false)
   const allNodes = Array.from(store.nodes.values()).map(n => ({ id: n.id, content: n.content, type: n.type }))
 
   function handleNav(key: NavKey) {
@@ -94,6 +96,17 @@ export default function AppShell({ children, filesPanel, headerActions, graphDat
           {/* Bottom */}
           <div className="space-y-0.5">
             {headerActions}
+            <button
+              onClick={() => setHelpOpen(true)}
+              className="w-8 h-8 flex items-center justify-center rounded-lg text-neutral-700 hover:text-white/60 hover:bg-white/[0.04] transition-all"
+              title="Help"
+            >
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.2">
+                <circle cx="7" cy="7" r="5.5" />
+                <path d="M5.5 5.5a1.5 1.5 0 0 1 3 0c0 1-1.5 1-1.5 2" />
+                <circle cx="7" cy="9.5" r="0.5" fill="currentColor" stroke="none" />
+              </svg>
+            </button>
             <form action="/auth/signout" method="post">
               <button
                 type="submit"
@@ -178,6 +191,7 @@ export default function AppShell({ children, filesPanel, headerActions, graphDat
           </>
         )}
       </div>
+      <HelpModal open={helpOpen} onClose={() => setHelpOpen(false)} />
     </div>
   )
 }
