@@ -112,7 +112,7 @@ export default function SpacesPanel() {
     return computeEvidenceRank(nodeArr, store.edges, undefined, 4, 0.15)
   }, [store.nodes, store.edges])
 
-  // Build evidence hierarchy tree — who supports whom
+  // Build evidence hierarchy tree — who supports whom.
   // Convention: higher-level concepts sit at depth 0 (LEFT). Their supporting
   // evidence cascades down-and-right. An edge "X supports Y" means X is evidence
   // for the more-general claim Y, so Y is the parent and X is the child.
@@ -120,7 +120,7 @@ export default function SpacesPanel() {
     interface TreeNode { id: string; content: string; type: string; rank: number; children: TreeNode[] }
     const allNodes = Array.from(store.nodes.values())
 
-    // Pick the strongest upward edge per child → assigns a single canonical parent
+    // Pick the strongest upward edge per child → assigns a single canonical parent.
     const parentOf = new Map<string, string>()
     const parentStrength = new Map<string, number>()
     const childrenOf = new Map<string, string[]>()
@@ -139,7 +139,8 @@ export default function SpacesPanel() {
     }
 
     // Break cycles: if following parent pointers from a node loops back to itself,
-    // detach the weakest link in that cycle so the graph becomes a forest.
+    // detach the weakest link in that cycle so the graph becomes a forest. This
+    // is what made expanding the "first ones" feel like going in circles.
     function findCycle(start: string): string[] | null {
       const path: string[] = []
       const seen = new Set<string>()
@@ -168,7 +169,7 @@ export default function SpacesPanel() {
       parentStrength.delete(weakestChild)
     }
 
-    // Build children map (now guaranteed acyclic)
+    // Build children map (now guaranteed acyclic).
     for (const [childId, parentId] of parentOf) {
       if (!childrenOf.has(parentId)) childrenOf.set(parentId, [])
       childrenOf.get(parentId)!.push(childId)
@@ -713,7 +714,7 @@ function HierarchyTree({
     return node.children.some(c => matches(c))
   }
 
-  // Header shown once at depth 0 to anchor direction in the user's mind
+  // Header at depth 0 anchors the directional convention in the user's mind.
   const headerLabel = depth === 0 ? (
     <div className="flex items-center gap-2 px-3 py-1.5 mb-1 text-[9px] uppercase tracking-wider text-neutral-600 border-b border-white/[0.04]">
       <span className="text-purple-400/70">◆ higher concept</span>
@@ -751,7 +752,7 @@ function HierarchyTree({
               className={`group relative flex items-center gap-1 py-[3px] rounded ${isRoot ? 'bg-white/[0.02] hover:bg-white/[0.05]' : 'hover:bg-white/[0.04]'}`}
               style={{ paddingLeft: `${pl}px`, paddingRight: '8px' }}
             >
-              {/* Horizontal connector from vertical line to this row (only for children) */}
+              {/* Horizontal connector from vertical guide line to this row (children only) */}
               {!isRoot && (
                 <span
                   aria-hidden
@@ -760,10 +761,10 @@ function HierarchyTree({
                 />
               )}
 
-              {/* Direction arrow on children: "↑ supports the concept on the left" */}
+              {/* Direction arrow on children: "↖ supports the concept up-and-left" */}
               {!isRoot && (
                 <span
-                  className="absolute text-[9px] text-purple-400/40 select-none"
+                  className="absolute text-[9px] text-purple-400/40 select-none pointer-events-none"
                   style={{ left: `${pl - 14}px` }}
                   title="supports the concept on the left"
                 >↖</span>
@@ -783,7 +784,7 @@ function HierarchyTree({
               {/* Type dot */}
               <span className={`text-[8px] shrink-0 ${typeColors[node.type] || 'text-neutral-600'}`}>●</span>
 
-              {/* Content — root concepts get a slightly brighter weight to read as "higher" */}
+              {/* Content — root concepts read brighter so "higher" is felt visually */}
               <span className={`text-[11px] truncate flex-1 min-w-0 ${isRoot ? 'text-white/85 font-medium' : 'text-white/55'}`}>{node.content}</span>
 
               {/* Rank */}
