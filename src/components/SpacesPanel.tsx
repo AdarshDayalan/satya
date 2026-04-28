@@ -158,6 +158,7 @@ export default function SpacesPanel() {
     for (const id of Array.from(parentOf.keys())) {
       const cycle = findCycle(id)
       if (!cycle) continue
+      // remove the weakest edge in the cycle
       let weakestChild = cycle[0]
       let weakest = parentStrength.get(weakestChild) ?? Infinity
       for (const c of cycle) {

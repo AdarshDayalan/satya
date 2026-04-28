@@ -43,14 +43,41 @@ export function GraphNavigationProvider({
 
   const focusedNodeId = focusStack.length > 0 ? focusStack[focusStack.length - 1] : null
 
+  // Adjacency for the smart pushFocus logic — used to detect lateral moves to siblings of ancestors.
+  const adjForPush = useMemo(() => {
+    const map = new Map<string, Set<string>>()
+    for (const e of edges) {
+      if (!map.has(e.from_node_id)) map.set(e.from_node_id, new Set())
+      if (!map.has(e.to_node_id)) map.set(e.to_node_id, new Set())
+      map.get(e.from_node_id)!.add(e.to_node_id)
+      map.get(e.to_node_id)!.add(e.from_node_id)
+    }
+    return map
+  }, [edges])
+
   const pushFocus = useCallback((nodeId: string) => {
     setFocusStack(prev => {
-      // If already in stack, jump to that level instead of duplicating
+      // 1) If already in stack, jump back to that level (handles circular paths).
       const idx = prev.indexOf(nodeId)
       if (idx !== -1) return prev.slice(0, idx + 1)
+
+      // 2) If the new node connects to an ancestor (not just the current focus), truncate
+      //    to that ancestor — the user is laterally exploring a higher-level concept's
+      //    neighborhood, not drilling deeper. Avoids unbounded stack growth on circular graphs.
+      const neighbors = adjForPush.get(nodeId)
+      if (neighbors && prev.length >= 2) {
+        // Walk ancestors oldest-first; truncate at the highest ancestor the new node touches.
+        for (let i = 0; i < prev.length - 1; i++) {
+          if (neighbors.has(prev[i])) {
+            return [...prev.slice(0, i + 1), nodeId]
+          }
+        }
+      }
+
+      // 3) Otherwise drill deeper.
       return [...prev, nodeId]
     })
-  }, [])
+  }, [adjForPush])
 
   const popFocus = useCallback(() => {
     setFocusStack(prev => prev.slice(0, -1))

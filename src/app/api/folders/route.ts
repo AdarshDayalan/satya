@@ -1,6 +1,30 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 
+// List the user's folders. Pass `?favorites=1` to limit to user-created folders
+// (excluding AI-auto-generated theme folders) — used by the favorites picker in SidePanel.
+export async function GET(req: Request) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const { searchParams } = new URL(req.url)
+  const favoritesOnly = searchParams.get('favorites') === '1'
+
+  let query = supabase
+    .from('folders')
+    .select('id, name, created_by')
+    .eq('user_id', user.id)
+    .order('created_at', { ascending: false })
+
+  if (favoritesOnly) query = query.eq('created_by', 'user')
+
+  const { data, error } = await query
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 400 })
+  return NextResponse.json({ folders: data || [] })
+}
+
 // Create folder manually
 export async function POST(req: Request) {
   const supabase = await createClient()
