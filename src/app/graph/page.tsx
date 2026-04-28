@@ -8,11 +8,13 @@ export default async function GraphPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  const [{ data: nodes }, { data: edges }, { data: folders }, { data: folderNodes }] = await Promise.all([
-    supabase.from('nodes').select('id, content, type, created_at').order('created_at', { ascending: false }).limit(200),
-    supabase.from('edges').select('from_node_id, to_node_id, relationship, strength').limit(500),
+  const [{ data: nodes }, { data: edges }, { data: folders }, { data: folderNodes }, { data: inputs }] = await Promise.all([
+    // Pull input_id and source_url so the SidePanel can render the Source card.
+    supabase.from('nodes').select('id, content, type, created_at, input_id, source_url, perspectives').order('created_at', { ascending: false }).limit(500),
+    supabase.from('edges').select('from_node_id, to_node_id, relationship, strength, reason').limit(2000),
     supabase.from('folders').select('id, name').limit(50),
     supabase.from('folder_nodes').select('folder_id, node_id').limit(1000),
+    supabase.from('inputs').select('id, raw_content, source_type, source_metadata, status, created_at').limit(500),
   ])
 
   return (
@@ -29,6 +31,7 @@ export default async function GraphPage() {
         edges={edges ?? []}
         folders={folders ?? []}
         folderNodes={folderNodes ?? []}
+        inputs={inputs ?? []}
       />
     </div>
   )

@@ -26,10 +26,19 @@ const typeColors: Record<string, string> = {
   question: 'text-amber-400/60',
   source: 'text-green-400/60',
   synthesis: 'text-purple-400/60',
+  self: 'text-violet-300/80',
   raw: 'text-neutral-500',
 }
 
-const NODE_TYPES = ['concept', 'idea', 'question', 'source', 'synthesis']
+const NODE_TYPES = ['concept', 'idea', 'question', 'source', 'synthesis', 'self']
+
+function stabilityLabel(s: number | null | undefined): { label: string; color: string } {
+  if (s === null || s === undefined) return { label: 'unanchored', color: 'text-neutral-600' }
+  if (s >= 0.6) return { label: 'recurring', color: 'text-emerald-400/80' }
+  if (s >= 0.2) return { label: 'active', color: 'text-blue-400/80' }
+  if (s > -0.2) return { label: 'in tension', color: 'text-amber-400/80' }
+  return { label: 'fading', color: 'text-red-400/80' }
+}
 
 interface Connection {
   node: { id: string; content: string; type: string }
@@ -59,7 +68,17 @@ interface SourceInput {
 }
 
 interface NodeDetailProps {
-  node: { id: string; content: string; type: string; weight: number; created_at: string; input_id: string | null }
+  node: {
+    id: string
+    content: string
+    type: string
+    weight: number
+    created_at: string
+    input_id: string | null
+    stability?: number | null
+    promoted_at?: string | null
+    promoted_from?: string[] | null
+  }
   connections: Connection[]
   sourceInput?: SourceInput | null
   allNodes: Array<{ id: string; content: string; type: string }>
@@ -96,6 +115,24 @@ export default function NodeDetail({ node, connections, sourceInput, allNodes }:
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ type: newType }),
     }).then(() => router.refresh())
+  }
+
+  async function handlePromoteToSelf() {
+    await fetch('/api/self/promote', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ node_id: node.id }),
+    })
+    router.refresh()
+  }
+
+  async function handleDemoteSelf() {
+    await fetch('/api/self/promote', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ node_id: node.id, demote: true }),
+    })
+    router.refresh()
   }
 
   function handleWeightChange(newWeight: number) {
@@ -145,10 +182,37 @@ export default function NodeDetail({ node, connections, sourceInput, allNodes }:
           <ActionMenu actions={[
             { label: 'Edit content', onClick: () => setEditing(true) },
             { label: 'Connect to...', onClick: () => setConnecting(true) },
+            ...(node.type === 'self'
+              ? [{ label: 'Unmark as self', onClick: handleDemoteSelf }]
+              : [{ label: 'Mark as self', onClick: handlePromoteToSelf }]),
             { label: 'Delete', onClick: () => setDeleting(true), danger: true },
           ]} />
         </div>
         <MarkdownContent content={node.content} />
+        {node.type === 'self' && (() => {
+          const s = node.stability
+          const { label, color } = stabilityLabel(s)
+          const pct = s === null || s === undefined ? 0 : Math.round(((s + 1) / 2) * 100)
+          return (
+            <div className="space-y-1.5 pt-1">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] uppercase tracking-widest text-neutral-600">stability</span>
+                <span className={`text-[11px] ${color}`}>{label}</span>
+              </div>
+              <div className="h-[3px] w-full bg-white/[0.04] rounded overflow-hidden">
+                <div
+                  className="h-full bg-gradient-to-r from-red-400/40 via-amber-400/40 to-emerald-400/60"
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
+              {node.promoted_from && node.promoted_from.length > 0 && (
+                <p className="text-[10px] text-neutral-700">
+                  promoted from {node.promoted_from.length} fragment{node.promoted_from.length === 1 ? '' : 's'}
+                </p>
+              )}
+            </div>
+          )
+        })()}
         <div className="flex items-center gap-4">
           <p className="text-[11px] text-neutral-700">
             {new Date(node.created_at).toLocaleDateString()}

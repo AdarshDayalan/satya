@@ -17,6 +17,7 @@ interface Folder {
   id: string
   name: string
   description: string | null
+  created_by?: string
 }
 
 interface FolderNode {
@@ -36,15 +37,18 @@ export default function SourceSidebar({
   folders,
   folderNodes,
   nodes,
+  edges = [],
 }: {
   inputs: Input[]
   folders: Folder[]
   folderNodes: FolderNode[]
   nodes: Node[]
+  edges?: Array<{ from_node_id: string; to_node_id: string }>
 }) {
   const router = useRouter()
   const { select } = useSelection()
   const [expanded, setExpanded] = useState<Record<string, boolean>>({ sources: true })
+  const [pruning, setPruning] = useState(false)
   const [showNewFolder, setShowNewFolder] = useState(false)
   const [newFolderName, setNewFolderName] = useState('')
 
@@ -65,6 +69,28 @@ export default function SourceSidebar({
     folderNodeMap.get(fn.folder_id)!.push(fn.node_id)
   }
   const nodeMap = new Map(nodes.map((n) => [n.id, n]))
+
+  // Orphans — nodes with zero edges in either direction. Surfaced for cleanup.
+  const orphans = (() => {
+    const connected = new Set<string>()
+    for (const e of edges) { connected.add(e.from_node_id); connected.add(e.to_node_id) }
+    return nodes.filter(n => !connected.has(n.id))
+  })()
+
+  async function pruneOrphans() {
+    if (orphans.length === 0) return
+    const ok = window.confirm(`Delete ${orphans.length} disconnected node${orphans.length === 1 ? '' : 's'}?`)
+    if (!ok) return
+    setPruning(true)
+    await Promise.all(orphans.map(o => fetch(`/api/nodes/${o.id}`, { method: 'DELETE' })))
+    setPruning(false)
+    router.refresh()
+  }
+
+  async function deleteOrphan(id: string) {
+    await fetch(`/api/nodes/${id}`, { method: 'DELETE' })
+    router.refresh()
+  }
 
   function toggle(id: string) {
     setExpanded((p) => ({ ...p, [id]: !p[id] }))
@@ -258,8 +284,17 @@ export default function SourceSidebar({
         </div>
       )}
 
-      {/* Folders */}
-      {folders.map((folder) => {
+      {/* Folders — split into user-curated 'Favorites' (created_by='user' or unspecified)
+          and AI-generated 'Themes'. Same render block runs twice with a different filter. */}
+      {(['user', 'ai'] as const).flatMap((kind) => {
+        const groupFolders = folders.filter(f => kind === 'user'
+          ? (f.created_by === 'user' || !f.created_by)
+          : f.created_by === 'ai')
+        if (groupFolders.length === 0) return []
+        const sectionLabel = kind === 'user' ? 'Favorites' : 'Themes'
+        return [
+          <Row key={`section-${kind}`} indent={0} icon="section" label={sectionLabel} count={groupFolders.length} />,
+          ...groupFolders.map((folder) => {
         const open = expanded[folder.id]
         const childIds = folderNodeMap.get(folder.id) || []
         const children = childIds.map((id) => nodeMap.get(id)).filter(Boolean) as Node[]
@@ -319,6 +354,8 @@ export default function SourceSidebar({
             )}
           </div>
         )
+          }),
+        ]
       })}
 
       {folders.length > 0 && <div className="h-px bg-white/[0.04] mx-2 my-1" />}
@@ -339,6 +376,52 @@ export default function SourceSidebar({
       ))}
       {expanded.sources && inputs.length === 0 && (
         <div className="h-[22px] pl-8 flex items-center text-[11px] text-neutral-700 italic">no sources yet</div>
+      )}
+
+      {/* Cleanup — disconnected nodes (orphans) */}
+      {orphans.length > 0 && (
+        <div className="mt-4 border-t border-white/[0.04] pt-2">
+          <button
+            onClick={() => toggle('cleanup')}
+            className="w-full flex items-center justify-between px-3 h-[22px] text-[10px] text-neutral-600 hover:text-neutral-400 uppercase tracking-wider"
+          >
+            <span className="flex items-center gap-1.5">
+              <Chevron open={!!expanded.cleanup} />
+              cleanup
+              <span className="text-neutral-700 normal-case lowercase tracking-normal">· {orphans.length} disconnected</span>
+            </span>
+            <button
+              onClick={(e) => { e.stopPropagation(); pruneOrphans() }}
+              disabled={pruning}
+              className="text-[10px] text-red-400/50 hover:text-red-400 normal-case lowercase tracking-normal disabled:opacity-50"
+              title="Delete all disconnected nodes"
+            >
+              {pruning ? 'pruning…' : 'prune all'}
+            </button>
+          </button>
+          {expanded.cleanup && (
+            <div className="space-y-px">
+              {orphans.slice(0, 50).map(n => (
+                <div key={n.id} className="group flex items-center h-[22px] pl-5 pr-2 hover:bg-white/[0.03]">
+                  <svg width="8" height="8" viewBox="0 0 8 8" className="shrink-0 mr-1.5">
+                    <circle cx="4" cy="4" r="2.5" fill={NODE_DOT[n.type] || '#525252'} />
+                  </svg>
+                  <span className="truncate flex-1 text-[11px] text-white/40">{n.content.slice(0, 80)}</span>
+                  <button
+                    onClick={() => deleteOrphan(n.id)}
+                    className="ml-1 text-[10px] text-neutral-700 hover:text-red-400 opacity-0 group-hover:opacity-100"
+                    title="Delete"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+              {orphans.length > 50 && (
+                <p className="px-5 py-1 text-[10px] text-neutral-700 italic">…and {orphans.length - 50} more</p>
+              )}
+            </div>
+          )}
+        </div>
       )}
 
       {/* Context menu */}

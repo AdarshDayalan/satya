@@ -49,6 +49,7 @@ const TYPE_COLORS: Record<string, string> = {
   question: '#fbbf24',
   source: '#34d399',
   synthesis: '#a78bfa',
+  self: '#c4b5fd',
   raw: '#737373',
 }
 
@@ -97,6 +98,7 @@ export default function KnowledgeGraph({
     question: theme.nodeColors.question,
     evidence: theme.nodeColors.evidence,
     mechanism: theme.nodeColors.mechanism,
+    self: theme.nodeColors.self,
     raw: theme.nodeColors.raw,
   }
   const themeRef = useRef(theme)
@@ -120,6 +122,8 @@ export default function KnowledgeGraph({
   const hoveredNode = useRef<GraphNode | null>(null)
   const dragNode = useRef<GraphNode | null>(null)
   const isDragging = useRef(false)
+  const didDrag = useRef(false)
+  const mouseDownPos = useRef({ x: 0, y: 0 })
   const mouse = useRef({ x: 0, y: 0 })
   const pan = useRef({ x: 0, y: 0 })
   const zoom = useRef(1)
@@ -132,6 +136,12 @@ export default function KnowledgeGraph({
   const [layoutMode, setLayoutMode] = useState<LayoutMode>('hierarchy')
   const layoutModeRef = useRef<LayoutMode>(layoutMode)
   layoutModeRef.current = layoutMode
+
+  // Filter bar — narrows what the graph shows. 'all' = everything; node-type filters restrict to that
+  // type; 'evidence' is special: when something is focused, traces every node that transitively
+  // supports it via supports/refines edges (not just immediate neighbors).
+  type FilterMode = 'all' | 'concepts' | 'sources' | 'evidence'
+  const [filterMode, setFilterMode] = useState<FilterMode>('all')
 
   // Connecting state — shift+drag from node to node
   const isConnecting = useRef(false)
@@ -158,6 +168,13 @@ export default function KnowledgeGraph({
   const pushFocusRef = useRef(graphNav?.pushFocus)
   pushFocusRef.current = graphNav?.pushFocus
 
+  // Default behavior is always 'organic' — the user explicitly opts into 'hierarchy' via the toggle.
+
+  // 'evidence' filter only makes sense when focused — drop back to 'all' on defocus.
+  useEffect(() => {
+    if (!focusedNodeId && filterMode === 'evidence') setFilterMode('all')
+  }, [focusedNodeId, filterMode])
+
   // Adjacency map (shared)
   const adj = useMemo(() => {
     const map = new Map<string, string[]>()
@@ -173,24 +190,34 @@ export default function KnowledgeGraph({
     return map
   }, [edges])
 
-  type NodeRole = 'focus' | 'child' | 'ancestor' | 'sibling' | 'top' | 'background'
-  const { visibleNodeIds, nodeRoles } = useMemo(() => {
+  // Node roles: focus, child, ancestor, sibling, top-level, and ambient background roles.
+  type NodeRole = 'focus' | 'child' | 'ancestor' | 'sibling' | 'top' | 'web' | 'background'
+  const { visibleNodeIds, nodeRoles, ancestorDepth } = useMemo(() => {
     const visible = new Set<string>()
     const roles = new Map<string, NodeRole>()
+    // Distance from focus along ancestor chain (1 = parent, 2 = grandparent…). Used for left-flowing layout.
+    const depth = new Map<string, number>()
 
     if (!focusedNodeId) {
-      // Top-level view: concepts + orphans + top-ranked
+      // Top-level: highlight concepts + orphans + top-ranked, plus a faint 1-hop web around them for character.
+      const highlighted = new Set<string>()
       for (const n of nodes) {
-        if (n.type === 'concept') { visible.add(n.id); roles.set(n.id, 'top') }
+        if (n.type === 'concept') { highlighted.add(n.id); roles.set(n.id, 'top') }
       }
       for (const n of nodes) {
-        if (!adj.has(n.id) || adj.get(n.id)!.length === 0) { visible.add(n.id); roles.set(n.id, 'top') }
+        if (!adj.has(n.id) || adj.get(n.id)!.length === 0) { highlighted.add(n.id); roles.set(n.id, 'top') }
       }
-      if (visible.size < 5) {
+      if (highlighted.size < 5) {
         const ranked = [...nodes]
           .sort((a, b) => (nodeRadii.get(b.id) || 0) - (nodeRadii.get(a.id) || 0))
           .slice(0, Math.max(8, nodes.length > 20 ? 12 : nodes.length))
-        for (const n of ranked) { visible.add(n.id); if (!roles.has(n.id)) roles.set(n.id, 'top') }
+        for (const n of ranked) { highlighted.add(n.id); if (!roles.has(n.id)) roles.set(n.id, 'top') }
+      }
+      for (const id of highlighted) visible.add(id)
+
+      // Faint web — every other node, so the unfocused canvas feels like a complex network.
+      for (const n of nodes) {
+        if (!visible.has(n.id)) { visible.add(n.id); roles.set(n.id, 'web') }
       }
       if (layoutMode === 'hierarchy' && visible.size > MAX_TOP_NODES) {
         const keep = [...visible]
@@ -222,22 +249,139 @@ export default function KnowledgeGraph({
           if (!visible.has(n.id)) { visible.add(n.id); roles.set(n.id, 'background') }
         }
       }
-    }
-    return { visibleNodeIds: visible, nodeRoles: roles }
-  }, [nodes, focusedNodeId, nodeRadii, adj, layoutMode])
 
-  // Filter to visible
-  const visibleNodes = useMemo(() => nodes.filter(n => visibleNodeIds.has(n.id)), [nodes, visibleNodeIds])
+      // Ancestors (rest of stack) — index 0 is oldest, last entry is current focus.
+      // Closer to focus → smaller depth (parent = 1).
+      const stackLen = focusStack.length
+      for (let i = 0; i < stackLen - 1; i++) {
+        const id = focusStack[i]
+        visible.add(id); roles.set(id, 'ancestor')
+        depth.set(id, stackLen - 1 - i)
+      }
+
+      // Siblings (other children of parent)
+      if (focusStack.length >= 2) {
+        const parentId = focusStack[focusStack.length - 2]
+        for (const sibId of (adj.get(parentId) || [])) {
+          if (!visible.has(sibId)) { visible.add(sibId); roles.set(sibId, 'sibling') }
+        }
+      }
+      if (layoutMode === 'hierarchy') {
+        for (const n of nodes) {
+          if (!visible.has(n.id)) { visible.add(n.id); roles.set(n.id, 'background') }
+        }
+      }
+    }
+    return { visibleNodeIds: visible, nodeRoles: roles, ancestorDepth: depth }
+  }, [nodes, focusedNodeId, focusStack, nodeRadii, adj, layoutMode])
+
+  // BFS depth from concept roots + per-depth Y slot — used by unfocused hierarchy mode.
+  // Each node gets a (depth, slot) so the layout is a clean grid: depth → X, slot → Y.
+  const rootLayout = useMemo(() => {
+    const depthMap = new Map<string, number>()
+    const slotMap = new Map<string, number>()
+    const groupSize = new Map<number, number>()
+    const queue: string[] = []
+    for (const n of nodes) {
+      if (n.type === 'concept') { depthMap.set(n.id, 0); queue.push(n.id) }
+    }
+    let head = 0
+    while (head < queue.length) {
+      const id = queue[head++]
+      const d = depthMap.get(id)!
+      for (const nbr of (adj.get(id) || [])) {
+        if (!depthMap.has(nbr)) { depthMap.set(nbr, d + 1); queue.push(nbr) }
+      }
+    }
+    // Unreachable nodes get a synthetic depth so they appear far right.
+    let maxDepth = 0
+    for (const d of depthMap.values()) if (d > maxDepth) maxDepth = d
+    for (const n of nodes) if (!depthMap.has(n.id)) depthMap.set(n.id, maxDepth + 1)
+    // Assign a Y slot per depth-group (deterministic by id so it's stable across renders).
+    const byDepth = new Map<number, string[]>()
+    for (const [id, d] of depthMap) {
+      if (!byDepth.has(d)) byDepth.set(d, [])
+      byDepth.get(d)!.push(id)
+    }
+    for (const [d, ids] of byDepth) {
+      ids.sort()
+      groupSize.set(d, ids.length)
+      ids.forEach((id, i) => slotMap.set(id, i))
+    }
+    return { depthMap, slotMap, groupSize }
+  }, [nodes, adj])
+  const rootLayoutRef = useRef(rootLayout)
+  rootLayoutRef.current = rootLayout
+
+  // Filter mask — overlays on top of role-based visibility. 'all' = no extra filtering.
+  // 'evidence' is the special transitive mode: when focused, BFS via supports/refines edges to
+  // find every node that transitively backs the focused claim (including ones not directly connected).
+  const filterMask = useMemo(() => {
+    if (filterMode === 'all') return null
+
+    if (filterMode === 'evidence') {
+      if (!focusedNodeId) return null
+      // BFS upstream via supporting edges. An edge "X supports Y" means X is evidence for Y;
+      // we want every X that reaches the focus, so traverse incoming supports.
+      const incoming = new Map<string, string[]>()
+      for (const e of edges) {
+        if (e.relationship === 'supports' || e.relationship === 'refines' || e.relationship === 'example_of') {
+          if (!incoming.has(e.to_node_id)) incoming.set(e.to_node_id, [])
+          incoming.get(e.to_node_id)!.push(e.from_node_id)
+        }
+      }
+      const reachable = new Set<string>([focusedNodeId])
+      const stack = [focusedNodeId]
+      while (stack.length) {
+        const id = stack.pop()!
+        for (const src of (incoming.get(id) || [])) {
+          if (!reachable.has(src)) { reachable.add(src); stack.push(src) }
+        }
+      }
+      return reachable
+    }
+
+    // Type-based filters keep the focus visible regardless of type.
+    const typeMatch: Record<string, (t: string) => boolean> = {
+      concepts: t => t === 'concept',
+      sources: t => t === 'source',
+    }
+    const match = typeMatch[filterMode]
+    if (!match) return null
+    const set = new Set<string>()
+    for (const n of nodes) if (match(n.type)) set.add(n.id)
+    if (focusedNodeId) set.add(focusedNodeId)
+    return set
+  }, [filterMode, focusedNodeId, edges, nodes])
+
+  // Filter to visible — combine role-based visibility with the filter mask.
+  const visibleNodes = useMemo(() => {
+    return nodes.filter(n => visibleNodeIds.has(n.id) && (!filterMask || filterMask.has(n.id)))
+  }, [nodes, visibleNodeIds, filterMask])
+  const finalVisibleIds = useMemo(() => new Set(visibleNodes.map(n => n.id)), [visibleNodes])
+  // In focused mode, only render edges that touch the focus or run along the ancestor chain.
+  // Child-to-child and sibling-to-sibling edges create unreadable spaghetti, so we hide them.
+  // Exception: in 'evidence' filter mode, show every supporting edge so the chain is visible.
   const visibleEdges = useMemo(() => {
+    if (filterMode === 'evidence' && focusedNodeId) {
+      return edges.filter(e =>
+        finalVisibleIds.has(e.from_node_id) && finalVisibleIds.has(e.to_node_id) &&
+        (e.relationship === 'supports' || e.relationship === 'refines' || e.relationship === 'example_of')
+      )
+    }
+    if (!focusedNodeId) {
+      return edges.filter(e => finalVisibleIds.has(e.from_node_id) && finalVisibleIds.has(e.to_node_id))
+    }
+    const stackSet = new Set(focusStack)
     return edges.filter(e => {
-      if (!visibleNodeIds.has(e.from_node_id) || !visibleNodeIds.has(e.to_node_id)) return false
-      if (!focusedNodeId) return true
-      if (layoutMode === 'organic') return e.from_node_id === focusedNodeId || e.to_node_id === focusedNodeId
-      return e.from_node_id === focusedNodeId || e.to_node_id === focusedNodeId
-        || nodeRoles.get(e.from_node_id) === 'background'
-        || nodeRoles.get(e.to_node_id) === 'background'
+      if (!finalVisibleIds.has(e.from_node_id) || !finalVisibleIds.has(e.to_node_id)) return false
+      // Always show edges touching the focused node.
+      if (e.from_node_id === focusedNodeId || e.to_node_id === focusedNodeId) return true
+      // Show edges along the ancestor chain (ancestor ↔ ancestor or ancestor ↔ focus).
+      if (stackSet.has(e.from_node_id) && stackSet.has(e.to_node_id)) return true
+      return false
     })
-  }, [edges, visibleNodeIds, focusedNodeId, layoutMode, nodeRoles])
+  }, [edges, finalVisibleIds, focusedNodeId, focusStack, filterMode])
 
   // Count hidden children per visible node
   const hiddenChildCount = useMemo(() => {
@@ -255,6 +399,8 @@ export default function KnowledgeGraph({
   hiddenChildCountRef.current = hiddenChildCount
   const nodeRolesRef = useRef(nodeRoles)
   nodeRolesRef.current = nodeRoles
+  const ancestorDepthRef = useRef(ancestorDepth)
+  ancestorDepthRef.current = ancestorDepth
 
   // Camera animation targets
   const targetPan = useRef({ x: 0, y: 0 })
@@ -339,121 +485,112 @@ export default function KnowledgeGraph({
   // Update targets whenever roles change — runs on every focus change
   useEffect(() => {
     syncNodes() // Add/remove nodes
+    // In 'evidence' filter, the foreground is the *evidence* (raw observations + sources).
+    // Concepts and intermediate ideas/mechanisms are still drawn so the chain reads, but dimmed.
+    const isSupporting = filterMode === 'evidence' && !!focusedNodeId
+    const isEvidenceType = (t: string) => t === 'evidence' || t === 'source' || t === 'raw'
+
     for (const n of graphNodes.current) {
       const baseRadius = nodeRadii.get(n.id) || n.radius || 4
       const role = nodeRoles.get(n.id) || 'top'
 
+      if (isSupporting && n.id !== focusedNodeId) {
+        // Evidence: prominent. Intermediates: faded chain markers.
+        if (isEvidenceType(n.type)) {
+          n.targetRadius = baseRadius * 1.3
+          n.targetAlpha = 0.95
+        } else {
+          n.targetRadius = baseRadius * 0.55
+          n.targetAlpha = 0.25
+        }
+        continue
+      }
+
       n.targetRadius = role === 'focus' ? baseRadius * 2.0
         : role === 'child' ? baseRadius * 1.2
-        : role === 'ancestor' ? baseRadius * 0.5
+        : role === 'ancestor' ? baseRadius * 0.55
         : role === 'sibling' ? baseRadius * 0.35
         : role === 'background' ? Math.max(2, baseRadius * 0.35)
+        : role === 'web' ? Math.max(1.5, baseRadius * 0.45)
         : baseRadius
 
       n.targetAlpha = role === 'focus' ? 1.0
         : role === 'child' ? 0.9
-        : role === 'ancestor' ? 0.15
-        : role === 'sibling' ? 0.08
+        : role === 'ancestor' ? 0.35
+        : role === 'sibling' ? 0.12
         : role === 'background' ? 0.045
+        : role === 'web' ? 0.12
         : 0.85
     }
+    // Seed hierarchy column positions on focus change so ancestors snap to the left,
+    // children to the right — physics smooths the rest. Only in hierarchy mode.
+    if (focusedNodeId && layoutModeRef.current === 'hierarchy') {
+      const focusNode = graphNodes.current.find(n => n.id === focusedNodeId)
+      if (focusNode && focusNode.x !== undefined && focusNode.y !== undefined) {
+        const fx = focusNode.x
+        const fy = focusNode.y
+        const COL_W = 260
+        const children = graphNodes.current.filter(n => nodeRoles.get(n.id) === 'child')
+        const siblings = graphNodes.current.filter(n => nodeRoles.get(n.id) === 'sibling')
+        const ancestors = graphNodes.current.filter(n => nodeRoles.get(n.id) === 'ancestor')
 
-    const canvas = canvasRef.current
-    const w = canvas?.offsetWidth || 800
-    const h = canvas?.offsetHeight || 600
-    const cx = w / 2
-    const cy = h / 2
-
-    if (layoutMode === 'organic') {
-      const children = graphNodes.current
-        .filter(n => nodeRoles.get(n.id) === 'child')
-        .sort((a, b) => (nodeRadii.get(b.id) || 0) - (nodeRadii.get(a.id) || 0))
-      const focusNode = graphNodes.current.find(n => nodeRoles.get(n.id) === 'focus')
-      const focusX = cx
-      const focusY = cy
-
-      for (const n of graphNodes.current) {
-        const role = nodeRoles.get(n.id)
-        if (role !== 'focus' && role !== 'child') {
-          n.targetX = undefined
-          n.targetY = undefined
-        }
-      }
-
-      if (focusNode) {
-        focusNode.targetX = focusX
-        focusNode.targetY = focusY
-      }
-
-      for (const n of graphNodes.current) {
-        if (nodeRoles.get(n.id) !== 'child') continue
-        const idx = children.findIndex(child => child.id === n.id)
-        const ring = idx < 10 ? 0 : 1
-        const ringIndex = ring === 0 ? idx : idx - 10
-        const ringCount = ring === 0 ? Math.min(children.length, 10) : Math.max(1, children.length - 10)
-        const radius = ring === 0 ? 250 : 390
-        const angle = -Math.PI / 2 + (ringIndex / ringCount) * Math.PI * 2 + (ring === 0 ? 0 : Math.PI / ringCount)
-        n.targetX = focusX + Math.cos(angle) * radius
-        n.targetY = focusY + Math.sin(angle) * radius
-      }
-    } else if (focusedNodeId) {
-      const focusX = cx - 170
-      const focusY = cy
-      const children = graphNodes.current
-        .filter(n => nodeRoles.get(n.id) === 'child')
-        .sort((a, b) => (nodeRadii.get(b.id) || 0) - (nodeRadii.get(a.id) || 0))
-      const columns = children.length > 10 ? 2 : 1
-      const rows = Math.ceil(children.length / columns)
-      const rowGap = Math.max(54, Math.min(82, (h - 140) / Math.max(1, rows - 1)))
-
-      for (const n of graphNodes.current) {
-        const role = nodeRoles.get(n.id)
-        if (role === 'focus') {
-          n.targetX = focusX
-          n.targetY = focusY
-        } else if (role === 'child') {
-          const idx = children.findIndex(child => child.id === n.id)
-          const col = columns === 1 ? 0 : idx % 2
-          const row = columns === 1 ? idx : Math.floor(idx / 2)
-          n.targetX = focusX + 280 + col * 210
-          n.targetY = cy + (row - (rows - 1) / 2) * rowGap
-        }
-      }
-    } else {
-      const topNodes = [...graphNodes.current]
-        .filter(n => nodeRoles.get(n.id) === 'top')
-        .sort((a, b) => (nodeRadii.get(b.id) || 0) - (nodeRadii.get(a.id) || 0))
-      const columns = Math.max(3, Math.ceil(Math.sqrt(topNodes.length)))
-      const colGap = Math.max(140, Math.min(210, (w - 180) / Math.max(1, columns - 1)))
-      const rowGap = 86
-      const rows = Math.ceil(topNodes.length / columns)
-      for (const n of graphNodes.current) {
-        if (nodeRoles.get(n.id) === 'background') {
-          n.targetX = undefined
-          n.targetY = undefined
-        }
-      }
-      for (let i = 0; i < topNodes.length; i++) {
-        const col = i % columns
-        const row = Math.floor(i / columns)
-        topNodes[i].targetX = cx + (col - (columns - 1) / 2) * colGap
-        topNodes[i].targetY = cy + (row - (rows - 1) / 2) * rowGap
+        children.forEach((n, i) => {
+          const k = children.length
+          const yOffset = (i - (k - 1) / 2) * 90
+          n.x = fx + COL_W + (Math.random() - 0.5) * 30
+          n.y = fy + yOffset + (Math.random() - 0.5) * 20
+          n.vx = 0; n.vy = 0
+        })
+        siblings.forEach((n, i) => {
+          const k = siblings.length
+          const yOffset = (i - (k - 1) / 2) * 70
+          n.x = fx - COL_W * 0.4 + (Math.random() - 0.5) * 30
+          n.y = fy + yOffset + (Math.random() - 0.5) * 20
+          n.vx = 0; n.vy = 0
+        })
+        ancestors.forEach(n => {
+          const d = ancestorDepth.get(n.id) ?? 1
+          n.x = fx - d * COL_W + (Math.random() - 0.5) * 20
+          // Keep ancestor Y near focus Y so they form a rough left-flowing chain.
+          n.y = fy + (Math.random() - 0.5) * 30
+          n.vx = 0; n.vy = 0
+        })
       }
     }
 
-    // Camera: center on focused node
+    // Unfocused hierarchy snap — instantly grid-place every node so the toggle feels immediate.
+    if (!focusedNodeId && layoutModeRef.current === 'hierarchy') {
+      const canvas = canvasRef.current
+      const cxWorld = canvas ? (canvas.offsetWidth / 2 / zoom.current - pan.current.x / zoom.current) : 0
+      const cyWorld = canvas ? (canvas.offsetHeight / 2 / zoom.current - pan.current.y / zoom.current) : 0
+      const COL_W = 260
+      const ROWS_PER_SUBCOL = 8
+      const subColWidth = COL_W * 0.5
+      const ySpacing = 60
+      const { depthMap, slotMap } = rootLayout
+      for (const n of graphNodes.current) {
+        const d = depthMap.get(n.id) ?? 0
+        const slot = slotMap.get(n.id) ?? 0
+        const subCol = Math.floor(slot / ROWS_PER_SUBCOL)
+        const row = slot % ROWS_PER_SUBCOL
+        n.x = cxWorld + (d - 1) * COL_W * 1.4 + subCol * subColWidth
+        n.y = cyWorld + (row - (ROWS_PER_SUBCOL - 1) / 2) * ySpacing
+        n.vx = 0; n.vy = 0
+      }
+    }
+
+    // Camera: center on focused node, using the target zoom for consistent lerp.
     if (focusedNodeId) {
       const focusNode = graphNodes.current.find(n => n.id === focusedNodeId)
       const canvas = canvasRef.current
       if (focusNode && canvas && focusNode.x) {
         const w = canvas.offsetWidth / 2
         const h = canvas.offsetHeight / 2
-        const nextZoom = layoutMode === 'hierarchy' ? 1.2 : 1
+        targetZoom.current = 1.2
         targetPan.current = {
-          x: w - (focusNode.targetX ?? focusNode.x!) * nextZoom,
-          y: h - (focusNode.targetY ?? focusNode.y!) * nextZoom,
+          x: w - focusNode.x! * targetZoom.current,
+          y: h - focusNode.y! * targetZoom.current,
         }
-        targetZoom.current = nextZoom
         cameraTransitioning.current = true
       }
     } else {
@@ -461,7 +598,7 @@ export default function KnowledgeGraph({
       targetZoom.current = 1
       cameraTransitioning.current = true
     }
-  }, [nodeRoles, nodeRadii, focusedNodeId, syncNodes, layoutMode])
+  }, [nodeRoles, nodeRadii, focusedNodeId, syncNodes, ancestorDepth, layoutMode, rootLayout, filterMode])
 
   // Find cluster centers for folder labels
   const getClusterCenters = useCallback(() => {
@@ -528,29 +665,73 @@ export default function KnowledgeGraph({
       const hovered = hoveredNode.current
       const dragging = dragNode.current
 
-      // Physics
+      const isFocused = !!focusedNodeIdRef.current
+      const isHierarchy = layoutModeRef.current === 'hierarchy'
+      const cxWorld = w / 2 / zoom.current - pan.current.x / zoom.current
+      const cyWorld = h / 2 / zoom.current - pan.current.y / zoom.current
+      // Hierarchy column spacing — ancestors flow leftward, children rightward.
+      const COL_W = 260
+
+      // Anchor columns to the focus node's world position so panning the camera doesn't drag them.
+      const focusNodeForLayout = isFocused ? nodeMap.get(focusedNodeIdRef.current!) : null
+      const anchorX = focusNodeForLayout?.x ?? cxWorld
+      const anchorY = focusNodeForLayout?.y ?? cyWorld
+
+      // Physics — repulsion + drift toward role-appropriate column.
       for (let i = 0; i < gn.length; i++) {
         const a = gn[i]
         if (a === dragging) continue
-        const role = nodeRolesRef.current.get(a.id)
-        const hasTarget = a.targetX !== undefined && a.targetY !== undefined
-        const targetX = hasTarget ? a.targetX! : layoutCenter.current.x
-        const targetY = hasTarget ? a.targetY! : layoutCenter.current.y
-        const isOrganicView = layoutModeRef.current === 'organic'
-        const targetForce = hasTarget
-          ? isOrganicView
-            ? role === 'focus' ? 0.025 : 0.012
-            : role === 'focus' ? 0.045 : role === 'child' ? 0.025 : 0.018
-          : 0.0001
-        a.vx! += (targetX - a.x!) * targetForce
-        a.vy! += (targetY - a.y!) * targetForce
+        const aRole = nodeRolesRef.current.get(a.id)
+
+        if (isFocused && isHierarchy && (aRole === 'ancestor' || aRole === 'child' || aRole === 'sibling')) {
+          // Pull toward target column — strong X spring keeps the directional flow obvious.
+          let targetX = anchorX
+          let yPullStrength = 0.0015
+          if (aRole === 'ancestor') {
+            const d = ancestorDepthRef.current.get(a.id) ?? 1
+            targetX = anchorX - d * COL_W
+            // Anchor ancestors near focus Y so the chain reads as a horizontal line, not a tree.
+            yPullStrength = 0.02
+          } else if (aRole === 'child') {
+            targetX = anchorX + COL_W
+          } else if (aRole === 'sibling') {
+            // Siblings sit just left of focus, offset vertically by physics.
+            targetX = anchorX - COL_W * 0.5
+          }
+          a.vx! += (targetX - a.x!) * 0.03
+          a.vy! += (anchorY - a.y!) * yPullStrength
+        } else if (!isFocused && isHierarchy) {
+          // Unfocused hierarchy: wrap each depth-group into a sub-grid so it doesn't pile vertically.
+          const { depthMap, slotMap } = rootLayoutRef.current
+          const d = depthMap.get(a.id) ?? 0
+          const slot = slotMap.get(a.id) ?? 0
+          const ROWS_PER_SUBCOL = 8
+          const ySpacing = 60
+          const subColWidth = COL_W * 0.5
+          const subCol = Math.floor(slot / ROWS_PER_SUBCOL)
+          const row = slot % ROWS_PER_SUBCOL
+          const targetX = cxWorld + (d - 1) * COL_W * 1.4 + subCol * subColWidth
+          const targetY = cyWorld + (row - (ROWS_PER_SUBCOL - 1) / 2) * ySpacing
+          a.vx! += (targetX - a.x!) * 0.03
+          a.vy! += (targetY - a.y!) * 0.03
+        } else {
+          // Organic drift — toward camera center, very weak so things stay where they settled.
+          a.vx! += (cxWorld - a.x!) * 0.0001
+          a.vy! += (cyWorld - a.y!) * 0.0001
+        }
         for (let j = i + 1; j < gn.length; j++) {
           const b = gn[j]
           if (b === dragging) continue
+          const bRole = nodeRolesRef.current.get(b.id)
+          // Web nodes are background decoration — skip web↔web repulsion entirely so they stay put.
+          if (aRole === 'web' && bRole === 'web') continue
           const dx = a.x! - b.x!
           const dy = a.y! - b.y!
-          const dist = Math.sqrt(dx * dx + dy * dy) || 1
-          const force = (layoutModeRef.current === 'organic' && focusedNodeIdRef.current ? 2600 : 1200) / (dist * dist)
+          const distSq = dx * dx + dy * dy
+          // Distance falloff — nodes farther than 220 don't interact, lets the graph settle into local clusters.
+          if (distSq > 220 * 220) continue
+          const dist = Math.sqrt(distSq) || 1
+          const force = 3000 / distSq
           a.vx! += (dx / dist) * force
           a.vy! += (dy / dist) * force
           b.vx! -= (dx / dist) * force
@@ -565,27 +746,40 @@ export default function KnowledgeGraph({
         const dx = b.x! - a.x!
         const dy = b.y! - a.y!
         const dist = Math.sqrt(dx * dx + dy * dy) || 1
-        const isFocusedView = Boolean(focusedNodeIdRef.current)
-        const isHierarchyView = layoutModeRef.current === 'hierarchy'
-        const isOrganicFocusedView = isFocusedView && layoutModeRef.current === 'organic'
-        const idealDist = isFocusedView && isHierarchyView ? 280 : isOrganicFocusedView ? 260 : edge.relationship === 'contradicts' ? 260 : 150
-        const force = (dist - idealDist) * (isFocusedView && isHierarchyView ? 0.0008 : isOrganicFocusedView ? 0.00045 : 0.0015) * edge.strength
-        a.vx! += (dx / dist) * force
+        const idealDist = edge.relationship === 'contradicts' ? 300 : 150
+        // In hierarchy mode, weaken edge spring along X so columns dominate; keep Y so siblings still cluster.
+        const aRole = nodeRolesRef.current.get(a.id)
+        const bRole = nodeRolesRef.current.get(b.id)
+        const inHierarchyEdge = isFocused && isHierarchy && (aRole === 'ancestor' || aRole === 'child' || aRole === 'sibling' || aRole === 'focus') && (bRole === 'ancestor' || bRole === 'child' || bRole === 'sibling' || bRole === 'focus')
+        const xMult = inHierarchyEdge ? 0.15 : 1
+        const force = (dist - idealDist) * 0.002 * edge.strength
+        a.vx! += (dx / dist) * force * xMult
         a.vy! += (dy / dist) * force
-        b.vx! -= (dx / dist) * force
+        b.vx! -= (dx / dist) * force * xMult
         b.vy! -= (dy / dist) * force
       }
 
       for (const n of gn) {
         if (n === dragging) continue
 
+        // Focus stays pinned — clear forces before integration so accumulated repulsion can't shift it.
         const role = nodeRolesRef.current.get(n.id)
-        const damping = layoutModeRef.current === 'organic'
-          ? role === 'focus' ? 0.58 : role === 'child' ? 0.66 : 0.78
-          : role === 'focus' ? 0.5 : role === 'child' ? 0.72 : 0.78
+        if (role === 'focus') {
+          n.vx = 0; n.vy = 0
+          continue
+        }
+
+        // Aggressive damping so nodes settle quickly instead of floating.
+        const damping = (role === 'ancestor' || role === 'sibling' || role === 'web' || role === 'background') ? 0.55 : 0.75
 
         n.vx! *= damping
         n.vy! *= damping
+        // Velocity cap — keeps repulsion blow-ups from launching nodes.
+        const VMAX = 6
+        if (n.vx! > VMAX) n.vx = VMAX; else if (n.vx! < -VMAX) n.vx = -VMAX
+        if (n.vy! > VMAX) n.vy = VMAX; else if (n.vy! < -VMAX) n.vy = -VMAX
+        // Sleep threshold — kill imperceptible drift so the graph fully stops.
+        if (Math.abs(n.vx!) < 0.02 && Math.abs(n.vy!) < 0.02) { n.vx = 0; n.vy = 0 }
         n.x! += n.vx!
         n.y! += n.vy!
 
@@ -599,7 +793,7 @@ export default function KnowledgeGraph({
         }
       }
 
-      // Camera lerp — only when actively transitioning (not fighting user pan)
+      // Camera lerp — only when actively transitioning to a new target. The user can pan/zoom freely after.
       if (cameraTransitioning.current) {
         const dx = targetPan.current.x - pan.current.x
         const dy = targetPan.current.y - pan.current.y
@@ -756,6 +950,17 @@ export default function KnowledgeGraph({
           ctx.stroke()
         }
 
+        // Ring on the arrow-key-cycled child — visually marks which neighbor the detail panel is showing.
+        if (cycledChildIdRef.current === n.id) {
+          const pulse = 1 + Math.sin(time.current * 4) * 0.15
+          ctx.beginPath()
+          ctx.arc(n.x!, n.y!, r + 5 * pulse, 0, Math.PI * 2)
+          ctx.strokeStyle = '#fbbf24'
+          ctx.lineWidth = 2
+          ctx.globalAlpha = 0.9
+          ctx.stroke()
+        }
+
         // Label — focused node gets full content card, others get truncated labels
         const isFocus = role === 'focus'
         const showLabel = isHovered || isFocus || (role === 'child' && r >= 6) || (role === 'top' && r >= 8)
@@ -889,6 +1094,10 @@ export default function KnowledgeGraph({
       }
 
       if (isDragging.current && dragNode.current) {
+        // Mark that the user actually dragged so mouseup can distinguish click from drag.
+        const dxFromDown = e.clientX - mouseDownPos.current.x
+        const dyFromDown = e.clientY - mouseDownPos.current.y
+        if (Math.abs(dxFromDown) > 3 || Math.abs(dyFromDown) > 3) didDrag.current = true
         dragNode.current.x = (mouse.current.x - pan.current.x) / zoom.current
         dragNode.current.y = (mouse.current.y - pan.current.y) / zoom.current
         dragNode.current.vx = 0
@@ -938,6 +1147,8 @@ export default function KnowledgeGraph({
       if (node) {
         dragNode.current = node
         isDragging.current = true
+        didDrag.current = false
+        mouseDownPos.current = { x: e.clientX, y: e.clientY }
         canvas!.style.cursor = 'grabbing'
       } else {
         isPanning.current = true
@@ -980,25 +1191,27 @@ export default function KnowledgeGraph({
       }
 
       if (isDragging.current && dragNode.current) {
-        const node = findNode(e.clientX, e.clientY)
-        if (node && node === dragNode.current && !dragMoved.current) {
-          const role = nodeRolesRef.current.get(node.id)
-          if (role === 'focus') {
-            // Already focused — open detail panel
-            if (onNodeClickRef.current) onNodeClickRef.current(node.id)
-          } else {
-            // Traverse into this node
-            if (pushFocusRef.current) pushFocusRef.current(node.id)
-            // Keep the detail panel in sync with the focused concept when available.
-            if (onNodeClickRef.current) onNodeClickRef.current(node.id)
-          }
+        // Single click → explore (push focus). Drag → drop in place, do nothing.
+        // Detail side panel is reserved for double-click.
+        if (!didDrag.current) {
+          const node = dragNode.current
+          if (pushFocusRef.current) pushFocusRef.current(node.id)
         }
       }
       dragNode.current = null
       isDragging.current = false
+      didDrag.current = false
       isPanning.current = false
       dragMoved.current = false
       canvas!.style.cursor = hoveredNode.current ? 'pointer' : 'grab'
+    }
+
+    // Double-click on a node opens the detail side panel (full info).
+    function onDoubleClick(e: MouseEvent) {
+      const node = findNode(e.clientX, e.clientY)
+      if (node && onNodeClickRef.current) {
+        onNodeClickRef.current(node.id)
+      }
     }
 
     function onWheel(e: WheelEvent) {
@@ -1012,6 +1225,8 @@ export default function KnowledgeGraph({
       zoom.current = Math.max(0.2, Math.min(5, zoom.current * delta))
       pan.current.x = mx - (mx - pan.current.x) * (zoom.current / oldZoom)
       pan.current.y = my - (my - pan.current.y) * (zoom.current / oldZoom)
+      // User took control — stop any in-flight camera transition.
+      cameraTransitioning.current = false
     }
 
     function onMouseLeave() {
@@ -1028,6 +1243,7 @@ export default function KnowledgeGraph({
     canvas.addEventListener('mousemove', onMouseMove)
     canvas.addEventListener('mousedown', onMouseDown)
     canvas.addEventListener('mouseup', onMouseUp)
+    canvas.addEventListener('dblclick', onDoubleClick)
     canvas.addEventListener('wheel', onWheel, { passive: false })
     canvas.addEventListener('mouseleave', onMouseLeave)
 
@@ -1035,46 +1251,72 @@ export default function KnowledgeGraph({
       canvas.removeEventListener('mousemove', onMouseMove)
       canvas.removeEventListener('mousedown', onMouseDown)
       canvas.removeEventListener('mouseup', onMouseUp)
+      canvas.removeEventListener('dblclick', onDoubleClick)
       canvas.removeEventListener('wheel', onWheel)
       canvas.removeEventListener('mouseleave', onMouseLeave)
     }
   }, [router])
 
+  // Cycle state — preview a child via arrow keys without leaving the current focus.
+  const [cycledChildId, setCycledChildId] = useState<string | null>(null)
+  const cycledChildIdRef = useRef(cycledChildId)
+  cycledChildIdRef.current = cycledChildId
+  // Reset preview whenever focus or filter changes (the cyclable list is now different).
+  useEffect(() => { setCycledChildId(null) }, [focusedNodeId, filterMode])
+
   // Keyboard navigation
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (e.key === 'Escape' || e.key === 'Backspace') {
+        if (cycledChildIdRef.current) { setCycledChildId(null); return }
         if (graphNav && focusStack.length > 0) {
           e.preventDefault()
           graphNav.popFocus()
         }
       }
-      // Arrow keys to cycle through siblings at current level
+      // Arrow keys cycle through visible children of the focused node — preview only,
+      // no stack mutation. The right detail panel updates so the user can read source/info.
       if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-        if (!graphNav || !focusedNodeId) return
-        // Get siblings: children of parent (or top-level if no parent)
-        const parentId = focusStack.length >= 2 ? focusStack[focusStack.length - 2] : null
-        const siblings = parentId
-          ? (adj.get(parentId) || [])
-          : nodes.filter(n => n.type === 'concept').map(n => n.id)
-
-        if (siblings.length < 2) return
-        const currentIdx = siblings.indexOf(focusedNodeId)
-        if (currentIdx === -1) return
-
+        if (!focusedNodeId) return
+        // Build cycle list. Each filter tours only its semantic class:
+        // - 'all'       → direct neighbors of the focus (immediate context)
+        // - 'concepts'  → visible concepts (filterMask already type-restricts)
+        // - 'sources'   → visible sources (filterMask already type-restricts)
+        // - 'evidence'  → only the actual evidence nodes among the transitive supporters
+        //                 (skip intermediate concepts/ideas/mechanisms — they were just scaffolding)
+        const isEvidenceType = (t: string) => t === 'evidence' || t === 'source' || t === 'raw'
+        const nodeMap = new Map(nodes.map(n => [n.id, n.type]))
+        const seen = new Set<string>()
+        const candidates: string[] = []
+        const source: Iterable<string> = filterMode === 'all'
+          ? (adj.get(focusedNodeId) || [])
+          : finalVisibleIds
+        for (const id of source) {
+          if (id === focusedNodeId || seen.has(id)) continue
+          if (!finalVisibleIds.has(id)) continue
+          // Evidence filter narrows further to actual evidence-type nodes.
+          if (filterMode === 'evidence' && !isEvidenceType(nodeMap.get(id) || '')) continue
+          seen.add(id)
+          candidates.push(id)
+        }
+        if (candidates.length === 0) return
+        e.preventDefault()
+        const cur = cycledChildIdRef.current
+        const idx = cur ? candidates.indexOf(cur) : -1
         const dir = e.key === 'ArrowRight' ? 1 : -1
-        const nextIdx = (currentIdx + dir + siblings.length) % siblings.length
-        const nextId = siblings[nextIdx]
-
-        // Replace last element of focus stack
-        graphNav.jumpTo(focusStack.length - 2)
-        setTimeout(() => graphNav.pushFocus(nextId), 10)
+        const nextIdx = idx === -1
+          ? (dir > 0 ? 0 : candidates.length - 1)
+          : (idx + dir + candidates.length) % candidates.length
+        const nextId = candidates[nextIdx]
+        setCycledChildId(nextId)
+        // Open the detail panel for the previewed child.
+        if (onNodeClickRef.current) onNodeClickRef.current(nextId)
       }
     }
 
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [graphNav, focusStack, focusedNodeId, adj, nodes])
+  }, [graphNav, focusStack, focusedNodeId, adj, finalVisibleIds, filterMode])
 
   async function handleConnect() {
     if (!pendingConnection) return
@@ -1124,12 +1366,63 @@ export default function KnowledgeGraph({
           </button>
         )}
         <span className="text-[10px] text-neutral-700">
-          {focusStack.length > 0 ? 'esc to go back · ← → to cycle' : 'click to explore · shift+drag to connect'}
+          {focusStack.length > 0 ? 'esc to go back · ← → to cycle · double-click for details' : 'click to explore · double-click for details · shift+drag to connect'}
         </span>
+      </div>
+
+      {/* Filter chip — collapsed by default; expands on hover with smooth max-width + opacity grow. */}
+      <div className="absolute bottom-3 left-1/2 -translate-x-1/2 group">
+        <div className="flex items-center bg-[#0a0a0a]/80 border border-white/[0.06] rounded-lg p-0.5 backdrop-blur-sm shadow-lg">
+          <span className="px-2.5 py-1 text-[10px] text-neutral-500 select-none whitespace-nowrap">
+            <span className="text-neutral-700">filter ·</span> <span className="text-white/70">{filterMode}</span>
+          </span>
+          <div
+            className="
+              flex items-center gap-1 overflow-hidden
+              max-w-0 opacity-0 ml-0
+              group-hover:max-w-[480px] group-hover:opacity-100 group-hover:ml-1 group-hover:pl-1 group-hover:border-l group-hover:border-white/[0.06]
+              transition-[max-width,opacity,margin,padding] duration-300 ease-out
+            "
+          >
+            {(['all', 'concepts', 'sources', 'evidence'] as const).map(m => {
+              const disabled = m === 'evidence' && !focusedNodeId
+              if (m === filterMode) return null
+              return (
+                <button
+                  key={m}
+                  onClick={() => !disabled && setFilterMode(m)}
+                  disabled={disabled}
+                  title={m === 'evidence' ? 'Show every node that transitively supports the focused claim' : undefined}
+                  className={`shrink-0 px-2.5 py-1 text-[10px] rounded transition-colors whitespace-nowrap ${
+                    disabled
+                      ? 'text-neutral-800 cursor-not-allowed'
+                      : 'text-neutral-500 hover:text-white/80 hover:bg-white/[0.05]'
+                  }`}
+                >
+                  {m}
+                </button>
+              )
+            })}
+          </div>
+        </div>
       </div>
 
       {/* Search bar */}
       <GraphSearchBar nodes={nodes} nodeRadii={nodeRadii} typeColors={TYPE_COLORS_THEMED} onSelect={(id) => {
+        // Reset filter so the searched node is guaranteed visible (a type filter could hide it).
+        setFilterMode('all')
+        // Pan camera to the selected node *now* so the user immediately sees where they navigated.
+        // Without this the focus updates but the camera lerp can land far from the chosen node.
+        const target = graphNodes.current.find(n => n.id === id)
+        const canvas = canvasRef.current
+        if (target && target.x !== undefined && target.y !== undefined && canvas) {
+          targetZoom.current = 1.4
+          targetPan.current = {
+            x: canvas.offsetWidth / 2 - target.x * targetZoom.current,
+            y: canvas.offsetHeight / 2 - target.y * targetZoom.current,
+          }
+          cameraTransitioning.current = true
+        }
         if (pushFocusRef.current) pushFocusRef.current(id)
         if (onNodeClickRef.current) onNodeClickRef.current(id)
       }} />

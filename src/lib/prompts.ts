@@ -7,7 +7,7 @@ Return JSON:
 {
   "summary": "one line summary of the overall thesis",
   "source_type": "journal | youtube | article | research_paper | pubmed | reddit | instagram | blog | podcast | book | twitter | tiktok | newsletter | wikipedia | government",
-  "nodes": [{ "content": "...", "type": "concept | idea | question | evidence | mechanism", "source_url": "https://... or null", "perspectives": ["science", "..."] }]
+  "nodes": [{ "content": "...", "type": "concept | idea | question | evidence | mechanism | self", "source_url": "https://... or null", "perspectives": ["science", "..."] }]
 }
 
 Rules:
@@ -17,11 +17,12 @@ Rules:
   Bad: "[two vague words]" (too vague to be useful)
 - Preserve causal chains: if A causes B causes C, extract all three so connections can form between them.
 - Types:
-  - "concept" = a core belief, principle, or truth claim
+  - "concept" = a core principle or truth claim about the world
   - "idea" = a specific insight, recommendation, or conclusion
   - "question" = an unresolved question
   - "evidence" = a specific study finding, statistic, or data point
   - "mechanism" = a biological, chemical, or causal pathway
+  - "self" = anything in the author's own first-person voice about themselves — thoughts, what they're inspired by, what they want to do, intentions, values, fears, what feels true to them, who they're becoming. Use for journal-style introspective writing. Signals: "I want", "I'm drawn to", "I keep thinking about", "what matters to me", "I'm afraid of", "I should", "I am". A self node is NOT an external claim — it's a fragment of the author's inner life.
 - If the text contains research citations or data, extract the key findings as "evidence" nodes.
 - If the text describes how something works (A → B → C), extract as "mechanism" nodes.
 - Do NOT merge nodes that are distinct steps in a causal chain — keep them separate.
@@ -115,3 +116,25 @@ Rules:
 - If the cluster spans a causal chain, name the chain.
 - Derive the name from what the nodes actually say, not from external assumptions.
 - Confidence 0.8+ = clear theme. 0.6-0.8 = loose theme. Below 0.6 = don't create.`
+
+export const PROMOTE_SELF_PROMPT = `You are reading a cluster of fragments from someone's journal and connected nodes. Your job is to decide if a recurring first-person pattern has emerged — something the author keeps returning to about who they are, what they want, what inspires them, or how they're moving through life.
+
+Cluster:
+{{cluster_nodes}}
+
+Return JSON:
+{
+  "should_promote": true,
+  "self": "one sentence in first person, 10-20 words",
+  "confidence": 0.0,
+  "reason": "what in the cluster pointed to this pattern, 1 sentence"
+}
+
+Rules:
+- This is a "self" node — a recurring fragment of the author's inner life, not a truth claim about the world.
+- It can be a value, an intention, a desire, a fear, a recurring thought, a thing they keep being drawn to, a quiet resolve. Anything the author keeps surfacing.
+- The sentence should be in the author's voice ("I ...") and feel like something they would say about themselves.
+- Do NOT promote external claims about the world (those are concepts).
+- Do NOT promote one-off thoughts. Only promote when the cluster shows the pattern recurring across fragments.
+- Confidence 0.8+ = clearly recurring. 0.6-0.8 = forming. Below 0.6 = don't promote.
+- If nothing has stabilized yet, return should_promote: false.`
