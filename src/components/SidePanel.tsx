@@ -254,6 +254,12 @@ export default function SidePanel({ type, id, onClose, onNavigate, allNodes, ful
                   </>
                 )
               })()}
+              {/* Inline actions on the same row as the type label */}
+              <div className="ml-auto flex items-center gap-2.5">
+                <button onClick={() => setEditing(true)} className="text-[10px] text-neutral-500 hover:text-white/70">edit</button>
+                <button onClick={() => setConnecting(true)} className="text-[10px] text-neutral-500 hover:text-white/70">connect</button>
+                <button onClick={() => setDeleting(true)} className="text-[10px] text-neutral-500 hover:text-red-400/70">delete</button>
+              </div>
             </div>
             <MarkdownContent content={nodeData.content} />
           </div>
@@ -427,13 +433,6 @@ export default function SidePanel({ type, id, onClose, onNavigate, allNodes, ful
             ) : (
               <p className="text-[11px] text-neutral-700 italic">no attachments</p>
             )}
-          </div>
-
-          {/* Bottom action row — edit / connect / delete live here so the source + content read first. */}
-          <div className="pt-3 mt-2 border-t border-white/[0.04] flex gap-3 items-center">
-            <button onClick={() => setEditing(true)} className="text-[11px] text-neutral-500 hover:text-white/70">edit</button>
-            <button onClick={() => setConnecting(true)} className="text-[11px] text-neutral-500 hover:text-white/70">connect</button>
-            <button onClick={() => setDeleting(true)} className="text-[11px] text-neutral-500 hover:text-red-400/70 ml-auto">delete</button>
           </div>
 
           <EditModal isOpen={editing} onClose={() => setEditing(false)} onSave={handleSaveNode} title="Edit node" initialValue={nodeData.content} />
