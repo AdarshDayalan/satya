@@ -33,6 +33,7 @@ interface DataStore {
 interface SelectionContextType {
   selection: Selection | null
   select: (type: 'node' | 'input', id: string) => void
+  goBack: () => void
   clearSelection: () => void
   store: DataStore
   updateNode: (id: string, updates: Partial<NodeFull>) => void
@@ -60,6 +61,7 @@ export function SelectionProvider({
   initialInputs: InputFull[]
 }) {
   const [selection, setSelection] = useState<Selection | null>(null)
+  const historyRef = useRef<Selection[]>([])
   const [nodes, setNodes] = useState(() => new Map(initialNodes.map(n => [n.id, n])))
   const [edges, setEdges] = useState(initialEdges)
   const [inputs, setInputs] = useState(() => new Map(initialInputs.map(i => [i.id, i])))
@@ -71,10 +73,21 @@ export function SelectionProvider({
   edgesRef.current = edges
 
   const select = useCallback((type: 'node' | 'input', id: string) => {
-    setSelection({ type, id })
+    setSelection(prev => {
+      if (prev) historyRef.current.push(prev)
+      return { type, id }
+    })
   }, [])
 
-  const clearSelection = useCallback(() => setSelection(null), [])
+  const goBack = useCallback(() => {
+    const prev = historyRef.current.pop()
+    setSelection(prev || null)
+  }, [])
+
+  const clearSelection = useCallback(() => {
+    historyRef.current = []
+    setSelection(null)
+  }, [])
 
   const updateNode = useCallback((id: string, updates: Partial<NodeFull>) => {
     setNodes(prev => {
@@ -142,7 +155,7 @@ export function SelectionProvider({
   }
 
   return (
-    <SelectionContext.Provider value={{ selection, select, clearSelection, store, updateNode, removeNode, updateInput, removeInput, addEdge }}>
+    <SelectionContext.Provider value={{ selection, select, goBack, clearSelection, store, updateNode, removeNode, updateInput, removeInput, addEdge }}>
       {children}
     </SelectionContext.Provider>
   )

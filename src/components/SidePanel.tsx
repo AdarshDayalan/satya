@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { cleanContent } from '@/lib/clean-content'
 import { useSelection } from './SelectionContext'
 import { getCredibility } from '@/lib/evidence-rank'
 import MarkdownContent from './MarkdownContent'
@@ -57,7 +58,7 @@ interface SidePanelProps {
 }
 
 export default function SidePanel({ type, id, onClose, onNavigate, allNodes, fullWidth }: SidePanelProps) {
-  const { store, updateNode, removeNode, updateInput, removeInput } = useSelection()
+  const { store, updateNode, removeNode, updateInput, removeInput, goBack } = useSelection()
   const [editing, setEditing] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [connecting, setConnecting] = useState(false)
@@ -140,7 +141,7 @@ export default function SidePanel({ type, id, onClose, onNavigate, allNodes, ful
       {/* Header */}
       <div className="flex items-center justify-between px-4 h-9 border-b border-white/[0.06] shrink-0">
         <div className="flex items-center gap-2">
-          <button onClick={onClose} className="text-neutral-600 hover:text-white/70 text-[11px]">←</button>
+          <button onClick={goBack} className="text-neutral-600 hover:text-white/70 text-[11px]">←</button>
           <span className="text-[10px] text-neutral-500 uppercase tracking-wider font-medium">
             {type === 'node' ? 'Node' : 'Source'}
           </span>
@@ -304,7 +305,7 @@ export default function SidePanel({ type, id, onClose, onNavigate, allNodes, ful
           </div>
 
           <div className="bg-white/[0.02] border border-white/[0.04] rounded-lg px-3 py-2.5">
-            <MarkdownContent content={inputData.raw_content} />
+            <MarkdownContent content={cleanContent(inputData.raw_content)} />
           </div>
 
           <div className="flex gap-2">

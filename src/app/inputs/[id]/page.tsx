@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import JournalEditor from '@/components/JournalEditor'
 import InputActions from '@/components/InputActions'
+import { cleanContent } from '@/lib/clean-content'
 import MarkdownContent from '@/components/MarkdownContent'
 
 const SOURCE_CONFIG: Record<string, { label: string; color: string; isPage: boolean }> = {
@@ -118,7 +119,7 @@ export default async function InputPage({ params }: { params: Promise<{ id: stri
             status={input.status}
           />
         ) : (
-          <MarkdownContent content={input.raw_content} />
+          <MarkdownContent content={cleanContent(input.raw_content)} />
         )}
 
         {/* Extracted nodes */}

@@ -240,15 +240,13 @@ export default function KnowledgeGraph({
 
 
 
-  const init = useCallback(() => {
+  // Sync graphNodes with visibleNodes — add new, remove gone, preserve existing positions
+  const syncNodes = useCallback(() => {
     const canvas = canvasRef.current
     if (!canvas) return
-    const w = canvas.offsetWidth
-    const h = canvas.offsetHeight
-    canvas.width = w * 2
-    canvas.height = h * 2
+    const w = canvas.offsetWidth || 800
+    const h = canvas.offsetHeight || 600
 
-    // Preserve positions for nodes that are already placed
     const existing = new Map(graphNodes.current.map(n => [n.id, n]))
 
     graphNodes.current = visibleNodes.map((n, i) => {
@@ -280,8 +278,13 @@ export default function KnowledgeGraph({
     })
   }, [visibleNodes, nodeRadii])
 
-  // Update targets whenever roles change (separate from init so it runs on focus change)
+  // Keep refs for animation loop (avoids recreating the effect)
+  const visibleEdgesRef = useRef(visibleEdges)
+  visibleEdgesRef.current = visibleEdges
+
+  // Update targets whenever roles change — runs on every focus change
   useEffect(() => {
+    syncNodes() // Add/remove nodes
     for (const n of graphNodes.current) {
       const baseRadius = nodeRadii.get(n.id) || n.radius || 4
       const role = nodeRoles.get(n.id) || 'top'
@@ -298,7 +301,30 @@ export default function KnowledgeGraph({
         : role === 'sibling' ? 0.08
         : 0.85
     }
-  }, [nodeRoles, nodeRadii])
+
+    // Camera: center on focused node
+    if (focusedNodeId) {
+      const focusNode = graphNodes.current.find(n => n.id === focusedNodeId)
+      const canvas = canvasRef.current
+      if (focusNode && canvas && focusNode.x) {
+        const w = canvas.offsetWidth / 2
+        const h = canvas.offsetHeight / 2
+        targetPan.current = {
+          x: w - focusNode.x! * zoom.current,
+          y: h - focusNode.y! * zoom.current,
+        }
+        targetZoom.current = 1.2
+        cameraTransitioning.current = true
+      }
+    } else {
+      targetPan.current = { x: 0, y: 0 }
+      targetZoom.current = 1
+      cameraTransitioning.current = true
+    }
+  }, [nodeRoles, nodeRadii, focusedNodeId, syncNodes])
+
+  // Camera transition flag — only lerp when actively transitioning
+  const cameraTransitioning = useRef(false)
 
   // Find cluster centers for folder labels
   const getClusterCenters = useCallback(() => {
@@ -335,8 +361,9 @@ export default function KnowledgeGraph({
     return () => observer.disconnect()
   }, [])
 
+  // Main animation loop — runs once, uses refs for all changing data
   useEffect(() => {
-    init()
+    syncNodes()
     const canvas = canvasRef.current
     if (!canvas) return
     const ctx = canvas.getContext('2d')
@@ -383,7 +410,7 @@ export default function KnowledgeGraph({
         }
       }
 
-      for (const edge of visibleEdges) {
+      for (const edge of visibleEdgesRef.current) {
         const a = nodeMap.get(edge.from_node_id)
         const b = nodeMap.get(edge.to_node_id)
         if (!a || !b || a === dragging || b === dragging) continue
@@ -429,10 +456,19 @@ export default function KnowledgeGraph({
         }
       }
 
-      // Camera lerp
-      pan.current.x += (targetPan.current.x - pan.current.x) * 0.06
-      pan.current.y += (targetPan.current.y - pan.current.y) * 0.06
-      zoom.current += (targetZoom.current - zoom.current) * 0.06
+      // Camera lerp — only when actively transitioning (not fighting user pan)
+      if (cameraTransitioning.current) {
+        const dx = targetPan.current.x - pan.current.x
+        const dy = targetPan.current.y - pan.current.y
+        const dz = targetZoom.current - zoom.current
+        pan.current.x += dx * 0.08
+        pan.current.y += dy * 0.08
+        zoom.current += dz * 0.08
+        // Stop transitioning when settled
+        if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5 && Math.abs(dz) < 0.01) {
+          cameraTransitioning.current = false
+        }
+      }
 
       // --- Draw cluster glows ---
       for (const [, nodeIds] of folderMap.current.entries()) {
@@ -462,7 +498,7 @@ export default function KnowledgeGraph({
       }
 
       // --- Draw edges ---
-      for (const edge of visibleEdges) {
+      for (const edge of visibleEdgesRef.current) {
         const a = nodeMap.get(edge.from_node_id)
         const b = nodeMap.get(edge.to_node_id)
         if (!a || !b) continue
@@ -659,7 +695,7 @@ export default function KnowledgeGraph({
 
     animate()
     return () => cancelAnimationFrame(animRef.current)
-  }, [init, visibleEdges, getClusterCenters, hiddenChildCount])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps — runs once, uses refs for all changing data
 
   // Mouse handlers
   useEffect(() => {
@@ -742,6 +778,7 @@ export default function KnowledgeGraph({
         canvas!.style.cursor = 'grabbing'
       } else {
         isPanning.current = true
+        cameraTransitioning.current = false // User took control
         panStart.current = { x: e.clientX, y: e.clientY }
         canvas!.style.cursor = 'grabbing'
       }
@@ -837,26 +874,6 @@ export default function KnowledgeGraph({
       canvas.removeEventListener('mouseleave', onMouseLeave)
     }
   }, [router])
-
-  // Camera targeting — center on focused node when focus changes
-  useEffect(() => {
-    if (focusedNodeId) {
-      const focusNode = graphNodes.current.find(n => n.id === focusedNodeId)
-      const canvas = canvasRef.current
-      if (focusNode && canvas) {
-        const w = canvas.offsetWidth / 2
-        const h = canvas.offsetHeight / 2
-        targetPan.current = {
-          x: w - focusNode.x! * zoom.current,
-          y: h - focusNode.y! * zoom.current,
-        }
-        targetZoom.current = 1.2
-      }
-    } else {
-      targetPan.current = { x: 0, y: 0 }
-      targetZoom.current = 1
-    }
-  }, [focusedNodeId])
 
   // Keyboard navigation
   useEffect(() => {
