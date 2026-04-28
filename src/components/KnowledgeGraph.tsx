@@ -131,9 +131,9 @@ export default function KnowledgeGraph({
   layoutModeRef.current = layoutMode
 
   // Filter bar — narrows what the graph shows. 'all' = everything; node-type filters restrict to that
-  // type; 'supporting' is special: when something is focused, traces every node that transitively
+  // type; 'evidence' is special: when something is focused, traces every node that transitively
   // supports it via supports/refines edges (not just immediate neighbors).
-  type FilterMode = 'all' | 'concepts' | 'evidence' | 'questions' | 'sources' | 'supporting'
+  type FilterMode = 'all' | 'concepts' | 'sources' | 'evidence'
   const [filterMode, setFilterMode] = useState<FilterMode>('all')
 
   // Connecting state — shift+drag from node to node
@@ -161,9 +161,9 @@ export default function KnowledgeGraph({
 
   // Default behavior is always 'organic' — the user explicitly opts into 'hierarchy' via the toggle.
 
-  // 'supporting' filter only makes sense when focused — drop back to 'all' on defocus.
+  // 'evidence' filter only makes sense when focused — drop back to 'all' on defocus.
   useEffect(() => {
-    if (!focusedNodeId && filterMode === 'supporting') setFilterMode('all')
+    if (!focusedNodeId && filterMode === 'evidence') setFilterMode('all')
   }, [focusedNodeId, filterMode])
 
   // Adjacency map (shared)
@@ -275,12 +275,12 @@ export default function KnowledgeGraph({
   rootLayoutRef.current = rootLayout
 
   // Filter mask — overlays on top of role-based visibility. 'all' = no extra filtering.
-  // Special 'supporting' mode: when focused, BFS via supports/refines edges to find every node
-  // that transitively backs the focused claim (including ones not directly connected).
+  // 'evidence' is the special transitive mode: when focused, BFS via supports/refines edges to
+  // find every node that transitively backs the focused claim (including ones not directly connected).
   const filterMask = useMemo(() => {
     if (filterMode === 'all') return null
 
-    if (filterMode === 'supporting') {
+    if (filterMode === 'evidence') {
       if (!focusedNodeId) return null
       // BFS upstream via supporting edges. An edge "X supports Y" means X is evidence for Y;
       // we want every X that reaches the focus, so traverse incoming supports.
@@ -305,8 +305,6 @@ export default function KnowledgeGraph({
     // Type-based filters keep the focus visible regardless of type.
     const typeMatch: Record<string, (t: string) => boolean> = {
       concepts: t => t === 'concept',
-      evidence: t => t === 'evidence' || t === 'idea' || t === 'mechanism',
-      questions: t => t === 'question',
       sources: t => t === 'source',
     }
     const match = typeMatch[filterMode]
@@ -324,9 +322,9 @@ export default function KnowledgeGraph({
   const finalVisibleIds = useMemo(() => new Set(visibleNodes.map(n => n.id)), [visibleNodes])
   // In focused mode, only render edges that touch the focus or run along the ancestor chain.
   // Child-to-child and sibling-to-sibling edges create unreadable spaghetti, so we hide them.
-  // Exception: in 'supporting' filter mode, show every supporting edge so the chain is visible.
+  // Exception: in 'evidence' filter mode, show every supporting edge so the chain is visible.
   const visibleEdges = useMemo(() => {
-    if (filterMode === 'supporting' && focusedNodeId) {
+    if (filterMode === 'evidence' && focusedNodeId) {
       return edges.filter(e =>
         finalVisibleIds.has(e.from_node_id) && finalVisibleIds.has(e.to_node_id) &&
         (e.relationship === 'supports' || e.relationship === 'refines' || e.relationship === 'example_of')
@@ -430,9 +428,9 @@ export default function KnowledgeGraph({
   // Update targets whenever roles change — runs on every focus change
   useEffect(() => {
     syncNodes() // Add/remove nodes
-    // In 'supporting' filter, the foreground is the *evidence* (raw observations + sources).
+    // In 'evidence' filter, the foreground is the *evidence* (raw observations + sources).
     // Concepts and intermediate ideas/mechanisms are still drawn so the chain reads, but dimmed.
-    const isSupporting = filterMode === 'supporting' && !!focusedNodeId
+    const isSupporting = filterMode === 'evidence' && !!focusedNodeId
     const isEvidenceType = (t: string) => t === 'evidence' || t === 'source' || t === 'raw'
 
     for (const n of graphNodes.current) {
@@ -1257,23 +1255,30 @@ export default function KnowledgeGraph({
         </span>
       </div>
 
-      {/* Filter chip — collapsed by default; expands on hover. Click any item to apply. */}
+      {/* Filter chip — collapsed by default; expands on hover with smooth max-width + opacity grow. */}
       <div className="absolute bottom-3 left-1/2 -translate-x-1/2 group">
-        <div className="flex gap-1 bg-[#0a0a0a]/80 border border-white/[0.06] rounded-lg p-0.5 backdrop-blur-sm">
-          <span className="px-2.5 py-1 text-[10px] text-neutral-500 select-none">
+        <div className="flex items-center bg-[#0a0a0a]/80 border border-white/[0.06] rounded-lg p-0.5 backdrop-blur-sm shadow-lg">
+          <span className="px-2.5 py-1 text-[10px] text-neutral-500 select-none whitespace-nowrap">
             <span className="text-neutral-700">filter ·</span> <span className="text-white/70">{filterMode}</span>
           </span>
-          <div className="hidden group-hover:flex gap-1 border-l border-white/[0.06] pl-1">
-            {(['all', 'concepts', 'evidence', 'questions', 'sources', 'supporting'] as const).map(m => {
-              const disabled = m === 'supporting' && !focusedNodeId
+          <div
+            className="
+              flex items-center gap-1 overflow-hidden
+              max-w-0 opacity-0 ml-0
+              group-hover:max-w-[480px] group-hover:opacity-100 group-hover:ml-1 group-hover:pl-1 group-hover:border-l group-hover:border-white/[0.06]
+              transition-[max-width,opacity,margin,padding] duration-300 ease-out
+            "
+          >
+            {(['all', 'concepts', 'sources', 'evidence'] as const).map(m => {
+              const disabled = m === 'evidence' && !focusedNodeId
               if (m === filterMode) return null
               return (
                 <button
                   key={m}
                   onClick={() => !disabled && setFilterMode(m)}
                   disabled={disabled}
-                  title={m === 'supporting' ? 'Show every node that transitively supports the focused claim' : undefined}
-                  className={`shrink-0 px-2.5 py-1 text-[10px] rounded transition-colors ${
+                  title={m === 'evidence' ? 'Show every node that transitively supports the focused claim' : undefined}
+                  className={`shrink-0 px-2.5 py-1 text-[10px] rounded transition-colors whitespace-nowrap ${
                     disabled
                       ? 'text-neutral-800 cursor-not-allowed'
                       : 'text-neutral-500 hover:text-white/80 hover:bg-white/[0.05]'
@@ -1289,6 +1294,20 @@ export default function KnowledgeGraph({
 
       {/* Search bar */}
       <GraphSearchBar nodes={nodes} nodeRadii={nodeRadii} typeColors={TYPE_COLORS_THEMED} onSelect={(id) => {
+        // Reset filter so the searched node is guaranteed visible (a type filter could hide it).
+        setFilterMode('all')
+        // Pan camera to the selected node *now* so the user immediately sees where they navigated.
+        // Without this the focus updates but the camera lerp can land far from the chosen node.
+        const target = graphNodes.current.find(n => n.id === id)
+        const canvas = canvasRef.current
+        if (target && target.x !== undefined && target.y !== undefined && canvas) {
+          targetZoom.current = 1.4
+          targetPan.current = {
+            x: canvas.offsetWidth / 2 - target.x * targetZoom.current,
+            y: canvas.offsetHeight / 2 - target.y * targetZoom.current,
+          }
+          cameraTransitioning.current = true
+        }
         if (pushFocusRef.current) pushFocusRef.current(id)
         if (onNodeClickRef.current) onNodeClickRef.current(id)
       }} />
