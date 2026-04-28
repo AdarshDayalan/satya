@@ -156,25 +156,34 @@ export default function KnowledgeGraph({
     return map
   }, [edges])
 
-  // Node roles: focus, child, ancestor, sibling, or top-level
-  type NodeRole = 'focus' | 'child' | 'ancestor' | 'sibling' | 'top'
-  const { visibleNodeIds, nodeRoles } = useMemo(() => {
+  // Node roles: focus, child, ancestor, sibling, top-level, or faint background web
+  type NodeRole = 'focus' | 'child' | 'ancestor' | 'sibling' | 'top' | 'web'
+  const { visibleNodeIds, nodeRoles, ancestorDepth } = useMemo(() => {
     const visible = new Set<string>()
     const roles = new Map<string, NodeRole>()
+    // Distance from focus along ancestor chain (1 = parent, 2 = grandparent…). Used for left-flowing layout.
+    const depth = new Map<string, number>()
 
     if (!focusedNodeId) {
-      // Top-level view: concepts + orphans + top-ranked
+      // Top-level: highlight concepts + orphans + top-ranked, plus a faint 1-hop web around them for character.
+      const highlighted = new Set<string>()
       for (const n of nodes) {
-        if (n.type === 'concept') { visible.add(n.id); roles.set(n.id, 'top') }
+        if (n.type === 'concept') { highlighted.add(n.id); roles.set(n.id, 'top') }
       }
       for (const n of nodes) {
-        if (!adj.has(n.id) || adj.get(n.id)!.length === 0) { visible.add(n.id); roles.set(n.id, 'top') }
+        if (!adj.has(n.id) || adj.get(n.id)!.length === 0) { highlighted.add(n.id); roles.set(n.id, 'top') }
       }
-      if (visible.size < 5) {
+      if (highlighted.size < 5) {
         const ranked = [...nodes]
           .sort((a, b) => (nodeRadii.get(b.id) || 0) - (nodeRadii.get(a.id) || 0))
           .slice(0, Math.max(8, nodes.length > 20 ? 12 : nodes.length))
-        for (const n of ranked) { visible.add(n.id); if (!roles.has(n.id)) roles.set(n.id, 'top') }
+        for (const n of ranked) { highlighted.add(n.id); if (!roles.has(n.id)) roles.set(n.id, 'top') }
+      }
+      for (const id of highlighted) visible.add(id)
+
+      // Faint web — every other node, so the unfocused canvas feels like a complex network.
+      for (const n of nodes) {
+        if (!visible.has(n.id)) { visible.add(n.id); roles.set(n.id, 'web') }
       }
     } else {
       // Focused view
@@ -185,9 +194,13 @@ export default function KnowledgeGraph({
         visible.add(childId); roles.set(childId, 'child')
       }
 
-      // Ancestors (rest of stack)
-      for (let i = 0; i < focusStack.length - 1; i++) {
-        visible.add(focusStack[i]); roles.set(focusStack[i], 'ancestor')
+      // Ancestors (rest of stack) — index 0 is oldest, last entry is current focus.
+      // Closer to focus → smaller depth (parent = 1).
+      const stackLen = focusStack.length
+      for (let i = 0; i < stackLen - 1; i++) {
+        const id = focusStack[i]
+        visible.add(id); roles.set(id, 'ancestor')
+        depth.set(id, stackLen - 1 - i)
       }
 
       // Siblings (other children of parent)
@@ -198,12 +211,27 @@ export default function KnowledgeGraph({
         }
       }
     }
-    return { visibleNodeIds: visible, nodeRoles: roles }
+    return { visibleNodeIds: visible, nodeRoles: roles, ancestorDepth: depth }
   }, [nodes, edges, focusedNodeId, focusStack, nodeRadii, adj])
 
   // Filter to visible
   const visibleNodes = useMemo(() => nodes.filter(n => visibleNodeIds.has(n.id)), [nodes, visibleNodeIds])
-  const visibleEdges = useMemo(() => edges.filter(e => visibleNodeIds.has(e.from_node_id) && visibleNodeIds.has(e.to_node_id)), [edges, visibleNodeIds])
+  // In focused mode, only render edges that touch the focus or run along the ancestor chain.
+  // Child-to-child and sibling-to-sibling edges create unreadable spaghetti, so we hide them.
+  const visibleEdges = useMemo(() => {
+    if (!focusedNodeId) {
+      return edges.filter(e => visibleNodeIds.has(e.from_node_id) && visibleNodeIds.has(e.to_node_id))
+    }
+    const stackSet = new Set(focusStack)
+    return edges.filter(e => {
+      if (!visibleNodeIds.has(e.from_node_id) || !visibleNodeIds.has(e.to_node_id)) return false
+      // Always show edges touching the focused node.
+      if (e.from_node_id === focusedNodeId || e.to_node_id === focusedNodeId) return true
+      // Show edges along the ancestor chain (ancestor ↔ ancestor or ancestor ↔ focus).
+      if (stackSet.has(e.from_node_id) && stackSet.has(e.to_node_id)) return true
+      return false
+    })
+  }, [edges, visibleNodeIds, focusedNodeId, focusStack])
 
   // Count hidden children per visible node
   const hiddenChildCount = useMemo(() => {
@@ -221,6 +249,10 @@ export default function KnowledgeGraph({
   hiddenChildCountRef.current = hiddenChildCount
   const nodeRolesRef = useRef(nodeRoles)
   nodeRolesRef.current = nodeRoles
+  const ancestorDepthRef = useRef(ancestorDepth)
+  ancestorDepthRef.current = ancestorDepth
+  const focusedNodeIdRef = useRef(focusedNodeId)
+  focusedNodeIdRef.current = focusedNodeId
 
   // Camera animation targets
   const targetPan = useRef({ x: 0, y: 0 })
@@ -291,29 +323,67 @@ export default function KnowledgeGraph({
 
       n.targetRadius = role === 'focus' ? baseRadius * 2.0
         : role === 'child' ? baseRadius * 1.2
-        : role === 'ancestor' ? baseRadius * 0.5
+        : role === 'ancestor' ? baseRadius * 0.55
         : role === 'sibling' ? baseRadius * 0.35
+        : role === 'web' ? Math.max(1.5, baseRadius * 0.45)
         : baseRadius
 
       n.targetAlpha = role === 'focus' ? 1.0
         : role === 'child' ? 0.9
-        : role === 'ancestor' ? 0.15
-        : role === 'sibling' ? 0.08
+        : role === 'ancestor' ? 0.35
+        : role === 'sibling' ? 0.12
+        : role === 'web' ? 0.12
         : 0.85
     }
 
-    // Camera: center on focused node
+    // Seed hierarchy column positions on focus change so ancestors snap to the left,
+    // children to the right — physics smooths the rest.
+    if (focusedNodeId) {
+      const focusNode = graphNodes.current.find(n => n.id === focusedNodeId)
+      if (focusNode && focusNode.x !== undefined && focusNode.y !== undefined) {
+        const fx = focusNode.x
+        const fy = focusNode.y
+        const COL_W = 260
+        const children = graphNodes.current.filter(n => nodeRoles.get(n.id) === 'child')
+        const siblings = graphNodes.current.filter(n => nodeRoles.get(n.id) === 'sibling')
+        const ancestors = graphNodes.current.filter(n => nodeRoles.get(n.id) === 'ancestor')
+
+        children.forEach((n, i) => {
+          const k = children.length
+          const yOffset = (i - (k - 1) / 2) * 90
+          n.x = fx + COL_W + (Math.random() - 0.5) * 30
+          n.y = fy + yOffset + (Math.random() - 0.5) * 20
+          n.vx = 0; n.vy = 0
+        })
+        siblings.forEach((n, i) => {
+          const k = siblings.length
+          const yOffset = (i - (k - 1) / 2) * 70
+          n.x = fx - COL_W * 0.4 + (Math.random() - 0.5) * 30
+          n.y = fy + yOffset + (Math.random() - 0.5) * 20
+          n.vx = 0; n.vy = 0
+        })
+        ancestors.forEach(n => {
+          const d = ancestorDepth.get(n.id) ?? 1
+          n.x = fx - d * COL_W + (Math.random() - 0.5) * 20
+          // Keep ancestor Y near focus Y so they form a rough left-flowing chain.
+          n.y = fy + (Math.random() - 0.5) * 30
+          n.vx = 0; n.vy = 0
+        })
+      }
+    }
+
+    // Camera: center on focused node, using the *target* zoom so pan & zoom stay aligned during the lerp.
     if (focusedNodeId) {
       const focusNode = graphNodes.current.find(n => n.id === focusedNodeId)
       const canvas = canvasRef.current
       if (focusNode && canvas && focusNode.x) {
         const w = canvas.offsetWidth / 2
         const h = canvas.offsetHeight / 2
-        targetPan.current = {
-          x: w - focusNode.x! * zoom.current,
-          y: h - focusNode.y! * zoom.current,
-        }
         targetZoom.current = 1.2
+        targetPan.current = {
+          x: w - focusNode.x! * targetZoom.current,
+          y: h - focusNode.y! * targetZoom.current,
+        }
         cameraTransitioning.current = true
       }
     } else {
@@ -321,7 +391,7 @@ export default function KnowledgeGraph({
       targetZoom.current = 1
       cameraTransitioning.current = true
     }
-  }, [nodeRoles, nodeRadii, focusedNodeId, syncNodes])
+  }, [nodeRoles, nodeRadii, focusedNodeId, syncNodes, ancestorDepth])
 
   // Camera transition flag — only lerp when actively transitioning
   const cameraTransitioning = useRef(false)
@@ -390,19 +460,59 @@ export default function KnowledgeGraph({
       const hovered = hoveredNode.current
       const dragging = dragNode.current
 
-      // Physics
+      const isFocused = !!focusedNodeIdRef.current
+      const cxWorld = w / 2 / zoom.current - pan.current.x / zoom.current
+      const cyWorld = h / 2 / zoom.current - pan.current.y / zoom.current
+      // Hierarchy column spacing — ancestors flow leftward, children rightward.
+      const COL_W = 260
+
+      // Anchor columns to the focus node's world position so panning the camera doesn't drag them.
+      const focusNodeForLayout = isFocused ? nodeMap.get(focusedNodeIdRef.current!) : null
+      const anchorX = focusNodeForLayout?.x ?? cxWorld
+      const anchorY = focusNodeForLayout?.y ?? cyWorld
+
+      // Physics — repulsion + drift toward role-appropriate column.
       for (let i = 0; i < gn.length; i++) {
         const a = gn[i]
         if (a === dragging) continue
-        a.vx! += (w / 2 / zoom.current - pan.current.x / zoom.current - a.x!) * 0.0001
-        a.vy! += (h / 2 / zoom.current - pan.current.y / zoom.current - a.y!) * 0.0001
+        const aRole = nodeRolesRef.current.get(a.id)
+
+        if (isFocused && (aRole === 'ancestor' || aRole === 'child' || aRole === 'sibling')) {
+          // Pull toward target column — strong X spring keeps the directional flow obvious.
+          let targetX = anchorX
+          let yPullStrength = 0.0015
+          if (aRole === 'ancestor') {
+            const d = ancestorDepthRef.current.get(a.id) ?? 1
+            targetX = anchorX - d * COL_W
+            // Anchor ancestors near focus Y so the chain reads as a horizontal line, not a tree.
+            yPullStrength = 0.02
+          } else if (aRole === 'child') {
+            targetX = anchorX + COL_W
+          } else if (aRole === 'sibling') {
+            // Siblings sit just left of focus, offset vertically by physics.
+            targetX = anchorX - COL_W * 0.5
+          }
+          a.vx! += (targetX - a.x!) * 0.03
+          a.vy! += (anchorY - a.y!) * yPullStrength
+        } else {
+          // Default gravitational drift (organic feel) — toward camera center, but very weak.
+          a.vx! += (cxWorld - a.x!) * 0.0001
+          a.vy! += (cyWorld - a.y!) * 0.0001
+        }
+
         for (let j = i + 1; j < gn.length; j++) {
           const b = gn[j]
           if (b === dragging) continue
+          const bRole = nodeRolesRef.current.get(b.id)
+          // Web nodes are background decoration — skip web↔web repulsion entirely so they stay put.
+          if (aRole === 'web' && bRole === 'web') continue
           const dx = a.x! - b.x!
           const dy = a.y! - b.y!
-          const dist = Math.sqrt(dx * dx + dy * dy) || 1
-          const force = 3000 / (dist * dist)
+          const distSq = dx * dx + dy * dy
+          // Distance falloff — nodes farther than 220 don't interact, lets the graph settle into local clusters.
+          if (distSq > 220 * 220) continue
+          const dist = Math.sqrt(distSq) || 1
+          const force = 3000 / distSq
           a.vx! += (dx / dist) * force
           a.vy! += (dy / dist) * force
           b.vx! -= (dx / dist) * force
@@ -418,33 +528,41 @@ export default function KnowledgeGraph({
         const dy = b.y! - a.y!
         const dist = Math.sqrt(dx * dx + dy * dy) || 1
         const idealDist = edge.relationship === 'contradicts' ? 300 : 150
+        // In hierarchy mode, weaken edge spring along X so columns dominate; keep Y so siblings still cluster.
+        const aRole = nodeRolesRef.current.get(a.id)
+        const bRole = nodeRolesRef.current.get(b.id)
+        const inHierarchyEdge = isFocused && (aRole === 'ancestor' || aRole === 'child' || aRole === 'sibling' || aRole === 'focus') && (bRole === 'ancestor' || bRole === 'child' || bRole === 'sibling' || bRole === 'focus')
+        const xMult = inHierarchyEdge ? 0.15 : 1
         const force = (dist - idealDist) * 0.002 * edge.strength
-        a.vx! += (dx / dist) * force
+        a.vx! += (dx / dist) * force * xMult
         a.vy! += (dy / dist) * force
-        b.vx! -= (dx / dist) * force
+        b.vx! -= (dx / dist) * force * xMult
         b.vy! -= (dy / dist) * force
       }
 
       for (const n of gn) {
         if (n === dragging) continue
 
-        // Role-based physics: ancestors/siblings get heavy damping
+        // Focus stays pinned — clear forces before integration so accumulated repulsion can't shift it.
         const role = nodeRolesRef.current.get(n.id)
-        const damping = (role === 'ancestor' || role === 'sibling') ? 0.7 : 0.9
+        if (role === 'focus') {
+          n.vx = 0; n.vy = 0
+          continue
+        }
+
+        // Aggressive damping so nodes settle quickly instead of floating.
+        const damping = (role === 'ancestor' || role === 'sibling' || role === 'web') ? 0.55 : 0.75
 
         n.vx! *= damping
         n.vy! *= damping
+        // Velocity cap — keeps repulsion blow-ups from launching nodes.
+        const VMAX = 6
+        if (n.vx! > VMAX) n.vx = VMAX; else if (n.vx! < -VMAX) n.vx = -VMAX
+        if (n.vy! > VMAX) n.vy = VMAX; else if (n.vy! < -VMAX) n.vy = -VMAX
+        // Sleep threshold — kill imperceptible drift so the graph fully stops.
+        if (Math.abs(n.vx!) < 0.02 && Math.abs(n.vy!) < 0.02) { n.vx = 0; n.vy = 0 }
         n.x! += n.vx!
         n.y! += n.vy!
-
-        // Focus node: lerp toward canvas center
-        if (role === 'focus') {
-          const cx = w / 2 / zoom.current - pan.current.x / zoom.current
-          const cy = h / 2 / zoom.current - pan.current.y / zoom.current
-          n.x! += (cx - n.x!) * 0.04
-          n.y! += (cy - n.y!) * 0.04
-          n.vx = 0; n.vy = 0
-        }
 
         // Lerp display values toward targets
         const LERP = 0.06
@@ -456,7 +574,7 @@ export default function KnowledgeGraph({
         }
       }
 
-      // Camera lerp — only when actively transitioning (not fighting user pan)
+      // Camera lerp — only when actively transitioning to a new target. The user can pan/zoom freely after.
       if (cameraTransitioning.current) {
         const dx = targetPan.current.x - pan.current.x
         const dy = targetPan.current.y - pan.current.y
@@ -848,6 +966,8 @@ export default function KnowledgeGraph({
       zoom.current = Math.max(0.2, Math.min(5, zoom.current * delta))
       pan.current.x = mx - (mx - pan.current.x) * (zoom.current / oldZoom)
       pan.current.y = my - (my - pan.current.y) * (zoom.current / oldZoom)
+      // User took control — stop any in-flight camera transition.
+      cameraTransitioning.current = false
     }
 
     function onMouseLeave() {
