@@ -1593,6 +1593,7 @@ export default function KnowledgeGraph({
           }}
           className="w-7 h-7 flex items-center justify-center text-neutral-600 hover:text-white bg-white/[0.04] border border-white/[0.06] rounded-lg text-[10px] transition-colors"
         >fit</button>
+        <ReconnectButton />
       </div>
 
       {/* Legend */}
@@ -1835,6 +1836,55 @@ function GraphLegend() {
             <p>click node to expand & inspect</p>
           </div>
         </div>
+      )}
+    </div>
+  )
+}
+
+function ReconnectButton() {
+  const [state, setState] = useState<'idle' | 'running' | 'done'>('idle')
+  const [result, setResult] = useState('')
+  const router = useRouter()
+
+  async function run() {
+    setState('running')
+    setResult('')
+    try {
+      const res = await fetch('/api/reconnect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ max_nodes: 30 }),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        setResult(`+${data.new_edges} connections`)
+        setState('done')
+        if (data.new_edges > 0) router.refresh()
+      } else {
+        setResult(data.error || 'failed')
+        setState('done')
+      }
+    } catch {
+      setResult('error')
+      setState('done')
+    }
+    setTimeout(() => { setState('idle'); setResult('') }, 4000)
+  }
+
+  return (
+    <div className="relative">
+      <button
+        onClick={run}
+        disabled={state === 'running'}
+        title="Find missing connections between nodes"
+        className="w-7 h-7 flex items-center justify-center text-neutral-600 hover:text-white bg-white/[0.04] border border-white/[0.06] rounded-lg text-[10px] transition-colors disabled:animate-pulse"
+      >
+        {state === 'running' ? '⟳' : '⟡'}
+      </button>
+      {result && (
+        <span className="absolute bottom-full mb-1 right-0 text-[10px] text-purple-400 whitespace-nowrap bg-[#0a0a0a]/90 px-2 py-0.5 rounded">
+          {result}
+        </span>
       )}
     </div>
   )
