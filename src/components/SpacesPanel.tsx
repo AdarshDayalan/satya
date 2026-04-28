@@ -112,47 +112,86 @@ export default function SpacesPanel() {
     return computeEvidenceRank(nodeArr, store.edges, undefined, 4, 0.15)
   }, [store.nodes, store.edges])
 
-  // Build evidence hierarchy tree — who supports whom
+  // Build evidence hierarchy tree — who supports whom.
+  // Convention: higher-level concepts sit at depth 0 (LEFT). Their supporting
+  // evidence cascades down-and-right. An edge "X supports Y" means X is evidence
+  // for the more-general claim Y, so Y is the parent and X is the child.
   const hierarchyTree = useMemo(() => {
     interface TreeNode { id: string; content: string; type: string; rank: number; children: TreeNode[] }
     const allNodes = Array.from(store.nodes.values())
 
-    // Build directed "supports" graph: child → parent (evidence flows up)
-    const parentOf = new Map<string, string>() // child → strongest parent
-    const childrenOf = new Map<string, string[]>() // parent → children
+    // Pick the strongest upward edge per child → assigns a single canonical parent.
+    const parentOf = new Map<string, string>()
+    const parentStrength = new Map<string, number>()
+    const childrenOf = new Map<string, string[]>()
 
     for (const e of store.edges) {
       const upward = ['evidence_for', 'supports', 'mechanism_of', 'example_of', 'causes'].includes(e.relationship)
       if (!upward) continue
       const childId = e.from_node_id
       const parentId = e.to_node_id
-      // Only assign parent if this is a stronger link
-      if (!parentOf.has(childId) || e.strength > 0.7) {
+      if (childId === parentId) continue // self-loop guard
+      const cur = parentStrength.get(childId) ?? -Infinity
+      if (e.strength > cur) {
+        parentStrength.set(childId, e.strength)
         parentOf.set(childId, parentId)
       }
     }
 
-    // Build children map
+    // Break cycles: if following parent pointers from a node loops back to itself,
+    // detach the weakest link in that cycle so the graph becomes a forest. This
+    // is what made expanding the "first ones" feel like going in circles.
+    function findCycle(start: string): string[] | null {
+      const path: string[] = []
+      const seen = new Set<string>()
+      let cur: string | undefined = start
+      while (cur && !seen.has(cur)) {
+        seen.add(cur)
+        path.push(cur)
+        cur = parentOf.get(cur)
+      }
+      if (cur && path.includes(cur)) {
+        return path.slice(path.indexOf(cur))
+      }
+      return null
+    }
+    for (const id of Array.from(parentOf.keys())) {
+      const cycle = findCycle(id)
+      if (!cycle) continue
+      let weakestChild = cycle[0]
+      let weakest = parentStrength.get(weakestChild) ?? Infinity
+      for (const c of cycle) {
+        const s = parentStrength.get(c) ?? Infinity
+        if (s < weakest) { weakest = s; weakestChild = c }
+      }
+      parentOf.delete(weakestChild)
+      parentStrength.delete(weakestChild)
+    }
+
+    // Build children map (now guaranteed acyclic).
     for (const [childId, parentId] of parentOf) {
       if (!childrenOf.has(parentId)) childrenOf.set(parentId, [])
       childrenOf.get(parentId)!.push(childId)
     }
 
-    // Find root nodes (no parent, or highest rank)
+    // Roots = highest concepts (no parent). Sort by EvidenceRank so the heaviest
+    // ideas surface first.
     const roots = allNodes.filter(n => !parentOf.has(n.id))
       .sort((a, b) => (evidenceRanks.get(b.id) || 1) - (evidenceRanks.get(a.id) || 1))
 
-    function buildTree(nodeId: string, depth: number): TreeNode | null {
+    function buildTree(nodeId: string, depth: number, ancestors: Set<string>): TreeNode | null {
       const node = store.nodes.get(nodeId)
-      if (!node || depth > 5) return null
+      if (!node || depth > 6) return null
+      if (ancestors.has(nodeId)) return null // belt-and-braces cycle guard
+      const nextAncestors = new Set(ancestors); nextAncestors.add(nodeId)
       const kids = (childrenOf.get(nodeId) || [])
-        .map(cid => buildTree(cid, depth + 1))
+        .map(cid => buildTree(cid, depth + 1, nextAncestors))
         .filter(Boolean) as TreeNode[]
       kids.sort((a, b) => b.rank - a.rank)
       return { id: node.id, content: node.content, type: node.type, rank: evidenceRanks.get(node.id) || 1, children: kids }
     }
 
-    return roots.slice(0, 30).map(n => buildTree(n.id, 0)).filter(Boolean) as TreeNode[]
+    return roots.slice(0, 30).map(n => buildTree(n.id, 0, new Set())).filter(Boolean) as TreeNode[]
   }, [store.nodes, store.edges, evidenceRanks])
 
   // Expanded tree nodes in hierarchy picker
@@ -674,18 +713,62 @@ function HierarchyTree({
     return node.children.some(c => matches(c))
   }
 
+  // Header at depth 0 anchors the directional convention in the user's mind.
+  const headerLabel = depth === 0 ? (
+    <div className="flex items-center gap-2 px-3 py-1.5 mb-1 text-[9px] uppercase tracking-wider text-neutral-600 border-b border-white/[0.04]">
+      <span className="text-purple-400/70">◆ higher concept</span>
+      <span className="text-neutral-700">→</span>
+      <span>supporting evidence</span>
+      <span className="ml-auto text-neutral-700 normal-case tracking-normal">indent = depth</span>
+    </div>
+  ) : null
+
   return (
     <>
+      {headerLabel}
       {tree.filter(matches).map(node => {
         const inDraft = draftNodeIds.has(node.id)
         const isExpanded = treeExpanded.has(node.id)
         const hasChildren = node.children.length > 0
         const childCount = node.children.length
-        const pl = 12 + depth * 16
+        const indentStep = 22 // wider per-level so direction is unmistakable
+        const pl = 12 + depth * indentStep
+        const isRoot = depth === 0
 
         return (
-          <div key={node.id}>
-            <div className="group flex items-center gap-1 py-[3px] hover:bg-white/[0.04] rounded" style={{ paddingLeft: `${pl}px`, paddingRight: '8px' }}>
+          <div key={node.id} className="relative">
+            {/* Vertical guide lines for each ancestor level — makes parent→child obvious */}
+            {Array.from({ length: depth }).map((_, i) => (
+              <span
+                key={i}
+                aria-hidden
+                className="absolute top-0 bottom-0 w-px bg-white/[0.05]"
+                style={{ left: `${12 + i * indentStep + 8}px` }}
+              />
+            ))}
+
+            <div
+              className={`group relative flex items-center gap-1 py-[3px] rounded ${isRoot ? 'bg-white/[0.02] hover:bg-white/[0.05]' : 'hover:bg-white/[0.04]'}`}
+              style={{ paddingLeft: `${pl}px`, paddingRight: '8px' }}
+            >
+              {/* Horizontal connector from vertical guide line to this row (children only) */}
+              {!isRoot && (
+                <span
+                  aria-hidden
+                  className="absolute top-1/2 h-px bg-white/[0.08]"
+                  style={{ left: `${12 + (depth - 1) * indentStep + 8}px`, width: `${indentStep - 8}px` }}
+                />
+              )}
+
+              {/* Direction arrow on children: "↖ supports the concept up-and-left" */}
+              {!isRoot && (
+                <span
+                  className="absolute text-[9px] text-purple-400/40 select-none pointer-events-none"
+                  style={{ left: `${pl - 14}px` }}
+                  title="supports the concept on the left"
+                >↖</span>
+              )}
+
               {/* Expand chevron */}
               {hasChildren ? (
                 <button onClick={() => onToggleExpand(node.id)} className="w-4 h-4 flex items-center justify-center shrink-0">
@@ -700,8 +783,8 @@ function HierarchyTree({
               {/* Type dot */}
               <span className={`text-[8px] shrink-0 ${typeColors[node.type] || 'text-neutral-600'}`}>●</span>
 
-              {/* Content */}
-              <span className="text-[11px] text-white/60 truncate flex-1 min-w-0">{node.content}</span>
+              {/* Content — root concepts read brighter so "higher" is felt visually */}
+              <span className={`text-[11px] truncate flex-1 min-w-0 ${isRoot ? 'text-white/85 font-medium' : 'text-white/55'}`}>{node.content}</span>
 
               {/* Rank */}
               <span className="text-[9px] text-neutral-700 shrink-0 w-6 text-right">{node.rank.toFixed(1)}</span>
