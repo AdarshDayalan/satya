@@ -11,9 +11,15 @@ interface GraphNavigationContextType {
   resetFocus: () => void
 }
 
-const GraphNavigationContext = createContext<GraphNavigationContextType>(null!)
+const GraphNavigationContext = createContext<GraphNavigationContextType | null>(null)
 
 export function useGraphNavigation() {
+  const context = useContext(GraphNavigationContext)
+  if (!context) throw new Error('useGraphNavigation must be used inside GraphNavigationProvider')
+  return context
+}
+
+export function useOptionalGraphNavigation() {
   return useContext(GraphNavigationContext)
 }
 
@@ -32,13 +38,15 @@ interface GraphEdge {
 
 export function GraphNavigationProvider({
   children,
-  nodes,
-  edges,
+  nodes: _nodes,
+  edges: _edges,
 }: {
   children: ReactNode
   nodes: GraphNode[]
   edges: GraphEdge[]
 }) {
+  void _nodes
+  void _edges
   const [focusStack, setFocusStack] = useState<string[]>([])
 
   const focusedNodeId = focusStack.length > 0 ? focusStack[focusStack.length - 1] : null
@@ -64,48 +72,6 @@ export function GraphNavigationProvider({
     setFocusStack([])
   }, [])
 
-  // Compute children of focused node for sidebar
-  const adj = useMemo(() => {
-    const map = new Map<string, string[]>()
-    for (const e of edges) {
-      if (!map.has(e.from_node_id)) map.set(e.from_node_id, [])
-      if (!map.has(e.to_node_id)) map.set(e.to_node_id, [])
-      map.get(e.from_node_id)!.push(e.to_node_id)
-      map.get(e.to_node_id)!.push(e.from_node_id)
-    }
-    return map
-  }, [edges])
-
-  // Nodes to show in sidebar — children of focused, or top-level concepts
-  const sidebarNodes = useMemo(() => {
-    if (!focusedNodeId) {
-      // Top level: concepts, then high-connection nodes
-      const concepts = nodes.filter(n => n.type === 'concept')
-      if (concepts.length > 0) return concepts
-      // Fallback: nodes sorted by connection count
-      return [...nodes]
-        .sort((a, b) => (adj.get(b.id)?.length || 0) - (adj.get(a.id)?.length || 0))
-        .slice(0, 12)
-    }
-    // Children of focused node
-    const childIds = adj.get(focusedNodeId) || []
-    return childIds
-      .map(id => nodes.find(n => n.id === id))
-      .filter(Boolean) as GraphNode[]
-  }, [focusedNodeId, nodes, adj])
-
-  // Breadcrumb labels
-  const breadcrumbs = useMemo(() => {
-    return focusStack.map(id => {
-      const node = nodes.find(n => n.id === id)
-      return {
-        id,
-        label: node ? (node.content.length > 25 ? node.content.slice(0, 25) + '…' : node.content) : id.slice(0, 8),
-        type: node?.type || 'idea',
-      }
-    })
-  }, [focusStack, nodes])
-
   return (
     <GraphNavigationContext.Provider value={{ focusStack, focusedNodeId, pushFocus, popFocus, jumpTo, resetFocus }}>
       {children}
@@ -119,11 +85,14 @@ export function useGraphSidebarData(nodes: GraphNode[], edges: GraphEdge[]) {
 
   const adj = useMemo(() => {
     const map = new Map<string, string[]>()
+    const add = (from: string, to: string) => {
+      if (!map.has(from)) map.set(from, [])
+      const list = map.get(from)!
+      if (!list.includes(to)) list.push(to)
+    }
     for (const e of edges) {
-      if (!map.has(e.from_node_id)) map.set(e.from_node_id, [])
-      if (!map.has(e.to_node_id)) map.set(e.to_node_id, [])
-      map.get(e.from_node_id)!.push(e.to_node_id)
-      map.get(e.to_node_id)!.push(e.from_node_id)
+      add(e.from_node_id, e.to_node_id)
+      add(e.to_node_id, e.from_node_id)
     }
     return map
   }, [edges])
@@ -131,7 +100,9 @@ export function useGraphSidebarData(nodes: GraphNode[], edges: GraphEdge[]) {
   const sidebarNodes = useMemo(() => {
     if (!focusedNodeId) {
       const concepts = nodes.filter(n => n.type === 'concept')
-      if (concepts.length > 0) return concepts
+      if (concepts.length > 0) {
+        return concepts.sort((a, b) => (adj.get(b.id)?.length || 0) - (adj.get(a.id)?.length || 0))
+      }
       return [...nodes]
         .sort((a, b) => (adj.get(b.id)?.length || 0) - (adj.get(a.id)?.length || 0))
         .slice(0, 12)
