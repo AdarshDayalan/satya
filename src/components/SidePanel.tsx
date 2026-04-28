@@ -77,6 +77,75 @@ export default function SidePanel({ type, id, onClose, onNavigate, allNodes, ful
   }
   const [attachments, setAttachments] = useState<Attachment[]>([])
 
+  // Save-to-folder (wishlist) state
+  interface FolderRow { id: string; name: string }
+  const [allFolders, setAllFolders] = useState<FolderRow[]>([])
+  const [memberFolderIds, setMemberFolderIds] = useState<Set<string>>(new Set())
+  const [savePickerOpen, setSavePickerOpen] = useState(false)
+  const [newFolderName, setNewFolderName] = useState('')
+
+  const fetchFoldersAndMembership = useCallback(async () => {
+    if (type !== 'node') return
+    const [foldersRes, memRes] = await Promise.all([
+      fetch('/api/folders'),
+      fetch(`/api/node-folders?node_id=${id}`),
+    ])
+    if (foldersRes.ok) {
+      const data = await foldersRes.json()
+      setAllFolders(data.folders || [])
+    }
+    if (memRes.ok) {
+      const data = await memRes.json()
+      setMemberFolderIds(new Set<string>(data.folder_ids || []))
+    }
+  }, [type, id])
+
+  useEffect(() => { fetchFoldersAndMembership() }, [fetchFoldersAndMembership])
+
+  const isFavorited = memberFolderIds.size > 0
+
+  async function toggleFolderMembership(folderId: string) {
+    const isMember = memberFolderIds.has(folderId)
+    // Optimistic update
+    setMemberFolderIds(prev => {
+      const next = new Set(prev)
+      if (isMember) next.delete(folderId); else next.add(folderId)
+      return next
+    })
+    if (isMember) {
+      await fetch(`/api/folders/${folderId}/nodes?node_id=${id}`, { method: 'DELETE' })
+    } else {
+      await fetch(`/api/folders/${folderId}/nodes`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ node_id: id }),
+      })
+    }
+  }
+
+  async function createAndSaveToFolder() {
+    const name = newFolderName.trim()
+    if (!name) return
+    setNewFolderName('')
+    const res = await fetch('/api/folders', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    })
+    if (!res.ok) return
+    const data = await res.json()
+    const newFolder = data.folder || data
+    if (newFolder?.id) {
+      setAllFolders(prev => [{ id: newFolder.id, name: newFolder.name || name }, ...prev])
+      setMemberFolderIds(prev => new Set(prev).add(newFolder.id))
+      await fetch(`/api/folders/${newFolder.id}/nodes`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ node_id: id }),
+      })
+    }
+  }
+
   const fetchAttachments = useCallback(async () => {
     if (type !== 'node') return
     const res = await fetch(`/api/attachments?node_id=${id}`)
@@ -230,10 +299,60 @@ export default function SidePanel({ type, id, onClose, onNavigate, allNodes, ful
             </div>
           )}
 
-          <div className="flex gap-2">
+          <div className="flex gap-2 items-center">
             <button onClick={() => setEditing(true)} className="text-[11px] text-neutral-500 hover:text-white/70">edit</button>
             <button onClick={() => setConnecting(true)} className="text-[11px] text-neutral-500 hover:text-white/70">connect</button>
             <button onClick={() => setDeleting(true)} className="text-[11px] text-neutral-500 hover:text-red-400/70">delete</button>
+            <div className="relative ml-auto">
+              <button
+                onClick={() => setSavePickerOpen(o => !o)}
+                title="Save to wishlist"
+                className={`flex items-center gap-1 text-[11px] ${isFavorited ? 'text-amber-400' : 'text-neutral-500 hover:text-white/70'}`}
+              >
+                <svg width="12" height="12" viewBox="0 0 12 12" fill={isFavorited ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.2">
+                  <path d="M6 1l1.5 3.2 3.5.5-2.5 2.4.6 3.4L6 9 2.9 10.5l.6-3.4L1 4.7l3.5-.5L6 1z" strokeLinejoin="round" />
+                </svg>
+                {isFavorited ? `saved · ${memberFolderIds.size}` : 'save'}
+              </button>
+              {savePickerOpen && (
+                <div className="absolute right-0 top-full mt-1 w-56 bg-[#0f0f0f] border border-white/[0.08] rounded-lg shadow-xl z-30 max-h-64 overflow-y-auto">
+                  <div className="px-3 py-2 border-b border-white/[0.04] text-[10px] uppercase tracking-wider text-neutral-500">Save to wishlist</div>
+                  {allFolders.length > 0 ? (
+                    <div>
+                      {allFolders.map(f => {
+                        const checked = memberFolderIds.has(f.id)
+                        return (
+                          <button
+                            key={f.id}
+                            onClick={() => toggleFolderMembership(f.id)}
+                            className="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-white/[0.04]"
+                          >
+                            <span className={`flex h-3.5 w-3.5 items-center justify-center rounded border ${checked ? 'bg-amber-400/80 border-amber-400' : 'border-white/20'}`}>
+                              {checked && <svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="black" strokeWidth="1.6"><path d="M1 4l2 2 4-4" /></svg>}
+                            </span>
+                            <span className="text-[12px] text-white/70 truncate">{f.name}</span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  ) : (
+                    <p className="px-3 py-2 text-[11px] text-neutral-600 italic">no wishlists yet</p>
+                  )}
+                  <div className="border-t border-white/[0.04] px-2 py-1.5 flex gap-1">
+                    <input
+                      value={newFolderName}
+                      onChange={(e) => setNewFolderName(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); createAndSaveToFolder() } }}
+                      placeholder="+ new wishlist"
+                      className="flex-1 bg-transparent text-[11px] text-white/70 placeholder-neutral-600 px-1 py-0.5 outline-none"
+                    />
+                    {newFolderName.trim() && (
+                      <button onClick={createAndSaveToFolder} className="text-[11px] text-amber-400 px-1">save</button>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
           {connections.length > 0 && (
