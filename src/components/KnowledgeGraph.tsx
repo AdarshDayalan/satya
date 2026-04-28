@@ -1285,7 +1285,7 @@ export default function KnowledgeGraph({
           </button>
         )}
         <span className="text-[10px] text-neutral-700">
-          {focusStack.length > 0 ? 'esc to go back · ← → to cycle · double-click for details' : 'click to explore · double-click for details · shift+drag to connect'}
+          {focusStack.length > 0 ? '← → to cycle · double-click for details' : 'click to explore · double-click for details · shift+drag to connect'}
         </span>
       </div>
 
