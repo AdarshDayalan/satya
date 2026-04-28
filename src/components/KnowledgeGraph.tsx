@@ -1113,13 +1113,11 @@ export default function KnowledgeGraph({
       }
 
       if (isDragging.current && dragNode.current) {
-        // If user didn't drag past the threshold, treat as a click → traverse to that node
-        // AND open the detail side panel so source/attachments are immediately visible.
-        // A real drag just drops the node and does nothing else.
+        // Single click → explore (push focus). Drag → drop in place, do nothing.
+        // Detail side panel is reserved for double-click.
         if (!didDrag.current) {
           const node = dragNode.current
           if (pushFocusRef.current) pushFocusRef.current(node.id)
-          if (onNodeClickRef.current) onNodeClickRef.current(node.id)
         }
       }
       dragNode.current = null
