@@ -5,6 +5,7 @@ import { useSelection } from './SelectionContext'
 import { GraphNavigationProvider } from './GraphNavigationContext'
 import KnowledgeGraph from './KnowledgeGraph'
 import GraphSidebar from './GraphSidebar'
+import SidePanel from './SidePanel'
 
 interface GraphWithPanelProps {
   nodes: Array<{ id: string; content: string; type: string; created_at: string }>
@@ -43,14 +44,32 @@ function GraphSidebarWrapper({ nodes, edges }: { nodes: GraphWithPanelProps['nod
   )
 }
 
+// Right detail panel — opens when something is selected (e.g., via double-click on canvas).
+function DetailPanelWrapper({ allNodes }: { allNodes: Array<{ id: string; content: string; type: string }> }) {
+  const { selection, select, clearSelection } = useSelection()
+  if (!selection) return null
+  return (
+    <SidePanel
+      key={`${selection.type}-${selection.id}`}
+      type={selection.type}
+      id={selection.id}
+      onClose={clearSelection}
+      onNavigate={select}
+      allNodes={allNodes}
+    />
+  )
+}
+
 export default function GraphWithPanel({ nodes, edges, folders, folderNodes }: GraphWithPanelProps) {
   const fullNodes = nodes.map(n => ({ ...n, weight: 1, input_id: null }))
+  const allNodes = nodes.map(n => ({ id: n.id, content: n.content, type: n.type }))
   return (
     <SelectionProvider initialNodes={fullNodes} initialEdges={edges} initialInputs={[]}>
       <GraphNavigationProvider nodes={nodes} edges={edges}>
         <div className="flex-1 flex overflow-hidden">
           <GraphSidebarWrapper nodes={nodes} edges={edges} />
           <GraphCanvas nodes={nodes} edges={edges} folders={folders} folderNodes={folderNodes} />
+          <DetailPanelWrapper allNodes={allNodes} />
         </div>
       </GraphNavigationProvider>
     </SelectionProvider>

@@ -17,6 +17,7 @@ interface Folder {
   id: string
   name: string
   description: string | null
+  created_by?: string
 }
 
 interface FolderNode {
@@ -283,8 +284,17 @@ export default function SourceSidebar({
         </div>
       )}
 
-      {/* Folders */}
-      {folders.map((folder) => {
+      {/* Folders — split into user-curated 'Favorites' (created_by='user' or unspecified)
+          and AI-generated 'Themes'. Same render block runs twice with a different filter. */}
+      {(['user', 'ai'] as const).flatMap((kind) => {
+        const groupFolders = folders.filter(f => kind === 'user'
+          ? (f.created_by === 'user' || !f.created_by)
+          : f.created_by === 'ai')
+        if (groupFolders.length === 0) return []
+        const sectionLabel = kind === 'user' ? 'Favorites' : 'Themes'
+        return [
+          <Row key={`section-${kind}`} indent={0} icon="section" label={sectionLabel} count={groupFolders.length} />,
+          ...groupFolders.map((folder) => {
         const open = expanded[folder.id]
         const childIds = folderNodeMap.get(folder.id) || []
         const children = childIds.map((id) => nodeMap.get(id)).filter(Boolean) as Node[]
@@ -344,6 +354,8 @@ export default function SourceSidebar({
             )}
           </div>
         )
+          }),
+        ]
       })}
 
       {folders.length > 0 && <div className="h-px bg-white/[0.04] mx-2 my-1" />}

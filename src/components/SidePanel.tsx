@@ -77,8 +77,9 @@ export default function SidePanel({ type, id, onClose, onNavigate, allNodes, ful
   }
   const [attachments, setAttachments] = useState<Attachment[]>([])
 
-  // Save-to-folder (wishlist) state
-  interface FolderRow { id: string; name: string }
+  // Favorites — user-created folders only. AI-generated theme folders are excluded so they
+  // don't mix in with the user's hand-curated favorites.
+  interface FolderRow { id: string; name: string; created_by?: string }
   const [allFolders, setAllFolders] = useState<FolderRow[]>([])
   const [memberFolderIds, setMemberFolderIds] = useState<Set<string>>(new Set())
   const [savePickerOpen, setSavePickerOpen] = useState(false)
@@ -87,7 +88,7 @@ export default function SidePanel({ type, id, onClose, onNavigate, allNodes, ful
   const fetchFoldersAndMembership = useCallback(async () => {
     if (type !== 'node') return
     const [foldersRes, memRes] = await Promise.all([
-      fetch('/api/folders'),
+      fetch('/api/folders?favorites=1'),
       fetch(`/api/node-folders?node_id=${id}`),
     ])
     if (foldersRes.ok) {
@@ -306,7 +307,7 @@ export default function SidePanel({ type, id, onClose, onNavigate, allNodes, ful
             <div className="relative ml-auto">
               <button
                 onClick={() => setSavePickerOpen(o => !o)}
-                title="Save to wishlist"
+                title="Save to a favorites folder"
                 className={`flex items-center gap-1 text-[11px] ${isFavorited ? 'text-amber-400' : 'text-neutral-500 hover:text-white/70'}`}
               >
                 <svg width="12" height="12" viewBox="0 0 12 12" fill={isFavorited ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.2">
@@ -316,7 +317,7 @@ export default function SidePanel({ type, id, onClose, onNavigate, allNodes, ful
               </button>
               {savePickerOpen && (
                 <div className="absolute right-0 top-full mt-1 w-56 bg-[#0f0f0f] border border-white/[0.08] rounded-lg shadow-xl z-30 max-h-64 overflow-y-auto">
-                  <div className="px-3 py-2 border-b border-white/[0.04] text-[10px] uppercase tracking-wider text-neutral-500">Save to wishlist</div>
+                  <div className="px-3 py-2 border-b border-white/[0.04] text-[10px] uppercase tracking-wider text-neutral-500">Favorites</div>
                   {allFolders.length > 0 ? (
                     <div>
                       {allFolders.map(f => {
@@ -336,14 +337,14 @@ export default function SidePanel({ type, id, onClose, onNavigate, allNodes, ful
                       })}
                     </div>
                   ) : (
-                    <p className="px-3 py-2 text-[11px] text-neutral-600 italic">no wishlists yet</p>
+                    <p className="px-3 py-2 text-[11px] text-neutral-600 italic">no favorites yet</p>
                   )}
                   <div className="border-t border-white/[0.04] px-2 py-1.5 flex gap-1">
                     <input
                       value={newFolderName}
                       onChange={(e) => setNewFolderName(e.target.value)}
                       onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); createAndSaveToFolder() } }}
-                      placeholder="+ new wishlist"
+                      placeholder="+ new favorites folder"
                       className="flex-1 bg-transparent text-[11px] text-white/70 placeholder-neutral-600 px-1 py-0.5 outline-none"
                     />
                     {newFolderName.trim() && (
