@@ -3,7 +3,7 @@
 import { useRef, useEffect, useCallback, useState, useMemo, Fragment } from 'react'
 import { computeEvidenceRank, weightToRadius } from '@/lib/evidence-rank'
 import { useRouter } from 'next/navigation'
-import { useGraphNavigation } from './GraphNavigationContext'
+import { useOptionalGraphNavigation } from './GraphNavigationContext'
 import { useTheme } from './ThemeContext'
 
 interface GraphNode {
@@ -18,6 +18,8 @@ interface GraphNode {
   vy?: number
   connections?: number
   radius?: number
+  targetX?: number
+  targetY?: number
   targetRadius?: number
   displayRadius?: number
   targetAlpha?: number
@@ -62,6 +64,10 @@ const REL_COLORS: Record<string, string> = {
 }
 
 const REL_TYPES = ['supports', 'contradicts', 'refines', 'example_of', 'causes', 'similar']
+const MAX_FOCUSED_CHILDREN = 18
+const MAX_TOP_NODES = 24
+const EMPTY_FOCUS_STACK: string[] = []
+type LayoutMode = 'hierarchy' | 'organic'
 
 interface PendingConnection {
   fromNode: GraphNode
@@ -121,13 +127,14 @@ export default function KnowledgeGraph({
   const mouse = useRef({ x: 0, y: 0 })
   const pan = useRef({ x: 0, y: 0 })
   const zoom = useRef(1)
+  const layoutCenter = useRef({ x: 400, y: 300 })
   const isPanning = useRef(false)
   const panStart = useRef({ x: 0, y: 0 })
+  const dragStart = useRef({ x: 0, y: 0 })
+  const dragMoved = useRef(false)
   const [tooltip, setTooltip] = useState<{ x: number; y: number; content: string; type: string } | null>(null)
-
-  // Layout mode — kept internally as 'organic' (no UI toggle anymore — user opts into filters instead).
-  const [layoutMode] = useState<'organic' | 'hierarchy'>('organic')
-  const layoutModeRef = useRef(layoutMode)
+  const [layoutMode, setLayoutMode] = useState<LayoutMode>('hierarchy')
+  const layoutModeRef = useRef<LayoutMode>(layoutMode)
   layoutModeRef.current = layoutMode
 
   // Filter bar — narrows what the graph shows. 'all' = everything; node-type filters restrict to that
@@ -153,9 +160,11 @@ export default function KnowledgeGraph({
   }, [nodes, edges])
 
   // Focus stack navigation — from context
-  const graphNav = (() => { try { return useGraphNavigation() } catch { return null } })()
-  const focusStack = graphNav?.focusStack ?? []
+  const graphNav = useOptionalGraphNavigation()
+  const focusStack = graphNav?.focusStack ?? EMPTY_FOCUS_STACK
   const focusedNodeId = graphNav?.focusedNodeId ?? null
+  const focusedNodeIdRef = useRef(focusedNodeId)
+  focusedNodeIdRef.current = focusedNodeId
   const pushFocusRef = useRef(graphNav?.pushFocus)
   pushFocusRef.current = graphNav?.pushFocus
 
@@ -169,17 +178,20 @@ export default function KnowledgeGraph({
   // Adjacency map (shared)
   const adj = useMemo(() => {
     const map = new Map<string, string[]>()
+    const add = (from: string, to: string) => {
+      if (!map.has(from)) map.set(from, [])
+      const list = map.get(from)!
+      if (!list.includes(to)) list.push(to)
+    }
     for (const e of edges) {
-      if (!map.has(e.from_node_id)) map.set(e.from_node_id, [])
-      if (!map.has(e.to_node_id)) map.set(e.to_node_id, [])
-      map.get(e.from_node_id)!.push(e.to_node_id)
-      map.get(e.to_node_id)!.push(e.from_node_id)
+      add(e.from_node_id, e.to_node_id)
+      add(e.to_node_id, e.from_node_id)
     }
     return map
   }, [edges])
 
-  // Node roles: focus, child, ancestor, sibling, top-level, or faint background web
-  type NodeRole = 'focus' | 'child' | 'ancestor' | 'sibling' | 'top' | 'web'
+  // Node roles: focus, child, ancestor, sibling, top-level, and ambient background roles.
+  type NodeRole = 'focus' | 'child' | 'ancestor' | 'sibling' | 'top' | 'web' | 'background'
   const { visibleNodeIds, nodeRoles, ancestorDepth } = useMemo(() => {
     const visible = new Set<string>()
     const roles = new Map<string, NodeRole>()
@@ -207,13 +219,35 @@ export default function KnowledgeGraph({
       for (const n of nodes) {
         if (!visible.has(n.id)) { visible.add(n.id); roles.set(n.id, 'web') }
       }
+      if (layoutMode === 'hierarchy' && visible.size > MAX_TOP_NODES) {
+        const keep = [...visible]
+          .sort((a, b) => (nodeRadii.get(b) || 0) - (nodeRadii.get(a) || 0))
+          .slice(0, MAX_TOP_NODES)
+        visible.clear()
+        roles.clear()
+        for (const id of keep) { visible.add(id); roles.set(id, 'top') }
+      }
+      if (layoutMode === 'hierarchy') {
+        for (const n of nodes) {
+          if (!visible.has(n.id)) { visible.add(n.id); roles.set(n.id, 'background') }
+        }
+      }
     } else {
       // Focused view
       visible.add(focusedNodeId); roles.set(focusedNodeId, 'focus')
 
-      // Children of focused
-      for (const childId of (adj.get(focusedNodeId) || [])) {
+      // Focused views show only the selected node and direct children.
+      const childIds = [...(adj.get(focusedNodeId) || [])]
+        .sort((a, b) => (nodeRadii.get(b) || 0) - (nodeRadii.get(a) || 0))
+        .slice(0, layoutMode === 'hierarchy' ? MAX_FOCUSED_CHILDREN : undefined)
+      for (const childId of childIds) {
         visible.add(childId); roles.set(childId, 'child')
+      }
+
+      if (layoutMode === 'hierarchy') {
+        for (const n of nodes) {
+          if (!visible.has(n.id)) { visible.add(n.id); roles.set(n.id, 'background') }
+        }
       }
 
       // Ancestors (rest of stack) — index 0 is oldest, last entry is current focus.
@@ -232,9 +266,14 @@ export default function KnowledgeGraph({
           if (!visible.has(sibId)) { visible.add(sibId); roles.set(sibId, 'sibling') }
         }
       }
+      if (layoutMode === 'hierarchy') {
+        for (const n of nodes) {
+          if (!visible.has(n.id)) { visible.add(n.id); roles.set(n.id, 'background') }
+        }
+      }
     }
     return { visibleNodeIds: visible, nodeRoles: roles, ancestorDepth: depth }
-  }, [nodes, edges, focusedNodeId, focusStack, nodeRadii, adj])
+  }, [nodes, focusedNodeId, focusStack, nodeRadii, adj, layoutMode])
 
   // BFS depth from concept roots + per-depth Y slot — used by unfocused hierarchy mode.
   // Each node gets a (depth, slot) so the layout is a clean grid: depth → X, slot → Y.
@@ -362,12 +401,12 @@ export default function KnowledgeGraph({
   nodeRolesRef.current = nodeRoles
   const ancestorDepthRef = useRef(ancestorDepth)
   ancestorDepthRef.current = ancestorDepth
-  const focusedNodeIdRef = useRef(focusedNodeId)
-  focusedNodeIdRef.current = focusedNodeId
 
   // Camera animation targets
   const targetPan = useRef({ x: 0, y: 0 })
   const targetZoom = useRef(1)
+  // Camera transition flag — only lerp when actively transitioning
+  const cameraTransitioning = useRef(false)
 
   // Build folder membership map
   const folderMap = useRef<Map<string, string[]>>(new Map())
@@ -405,6 +444,24 @@ export default function KnowledgeGraph({
         }
       }
 
+      const visibleNeighborId = (adj.get(n.id) || []).find(id => existing.has(id))
+      const anchor = visibleNeighborId ? existing.get(visibleNeighborId) : null
+      if (anchor) {
+        const angle = Math.random() * Math.PI * 2
+        const distance = 70 + Math.random() * 90
+        return {
+          ...n,
+          x: anchor.x! + Math.cos(angle) * distance,
+          y: anchor.y! + Math.sin(angle) * distance,
+          vx: 0,
+          vy: 0,
+          connections: 0,
+          radius: baseRadius,
+          displayRadius: 0,
+          displayAlpha: 0,
+        }
+      }
+
       const angle = (i / visibleNodes.length) * Math.PI * 2
       const r = Math.min(w, h) * 0.3
       return {
@@ -419,7 +476,7 @@ export default function KnowledgeGraph({
         displayAlpha: 0,
       }
     })
-  }, [visibleNodes, nodeRadii])
+  }, [visibleNodes, nodeRadii, adj])
 
   // Keep refs for animation loop (avoids recreating the effect)
   const visibleEdgesRef = useRef(visibleEdges)
@@ -453,6 +510,7 @@ export default function KnowledgeGraph({
         : role === 'child' ? baseRadius * 1.2
         : role === 'ancestor' ? baseRadius * 0.55
         : role === 'sibling' ? baseRadius * 0.35
+        : role === 'background' ? Math.max(2, baseRadius * 0.35)
         : role === 'web' ? Math.max(1.5, baseRadius * 0.45)
         : baseRadius
 
@@ -460,10 +518,10 @@ export default function KnowledgeGraph({
         : role === 'child' ? 0.9
         : role === 'ancestor' ? 0.35
         : role === 'sibling' ? 0.12
+        : role === 'background' ? 0.045
         : role === 'web' ? 0.12
         : 0.85
     }
-
     // Seed hierarchy column positions on focus change so ancestors snap to the left,
     // children to the right — physics smooths the rest. Only in hierarchy mode.
     if (focusedNodeId && layoutModeRef.current === 'hierarchy') {
@@ -521,7 +579,7 @@ export default function KnowledgeGraph({
       }
     }
 
-    // Camera: center on focused node, using the *target* zoom so pan & zoom stay aligned during the lerp.
+    // Camera: center on focused node, using the target zoom for consistent lerp.
     if (focusedNodeId) {
       const focusNode = graphNodes.current.find(n => n.id === focusedNodeId)
       const canvas = canvasRef.current
@@ -541,9 +599,6 @@ export default function KnowledgeGraph({
       cameraTransitioning.current = true
     }
   }, [nodeRoles, nodeRadii, focusedNodeId, syncNodes, ancestorDepth, layoutMode, rootLayout, filterMode])
-
-  // Camera transition flag — only lerp when actively transitioning
-  const cameraTransitioning = useRef(false)
 
   // Find cluster centers for folder labels
   const getClusterCenters = useCallback(() => {
@@ -574,13 +629,14 @@ export default function KnowledgeGraph({
       if (w > 0 && h > 0) {
         canvas.width = w * 2
         canvas.height = h * 2
+        layoutCenter.current = { x: w / 2, y: h / 2 }
       }
     })
     observer.observe(canvas)
     return () => observer.disconnect()
   }, [])
 
-  // Main animation loop — runs once, uses refs for all changing data
+  // Main animation loop. It runs once and reads changing data from refs.
   useEffect(() => {
     syncNodes()
     const canvas = canvasRef.current
@@ -663,7 +719,6 @@ export default function KnowledgeGraph({
           a.vx! += (cxWorld - a.x!) * 0.0001
           a.vy! += (cyWorld - a.y!) * 0.0001
         }
-
         for (let j = i + 1; j < gn.length; j++) {
           const b = gn[j]
           if (b === dragging) continue
@@ -715,7 +770,7 @@ export default function KnowledgeGraph({
         }
 
         // Aggressive damping so nodes settle quickly instead of floating.
-        const damping = (role === 'ancestor' || role === 'sibling' || role === 'web') ? 0.55 : 0.75
+        const damping = (role === 'ancestor' || role === 'sibling' || role === 'web' || role === 'background') ? 0.55 : 0.75
 
         n.vx! *= damping
         n.vy! *= damping
@@ -780,7 +835,12 @@ export default function KnowledgeGraph({
       }
 
       // --- Draw edges ---
-      for (const edge of visibleEdgesRef.current) {
+      const drawEdges = [...visibleEdgesRef.current].sort((a, b) => {
+        const aBg = nodeRolesRef.current.get(a.from_node_id) === 'background' || nodeRolesRef.current.get(a.to_node_id) === 'background'
+        const bBg = nodeRolesRef.current.get(b.from_node_id) === 'background' || nodeRolesRef.current.get(b.to_node_id) === 'background'
+        return Number(bBg) - Number(aBg)
+      })
+      for (const edge of drawEdges) {
         const a = nodeMap.get(edge.from_node_id)
         const b = nodeMap.get(edge.to_node_id)
         if (!a || !b) continue
@@ -789,11 +849,16 @@ export default function KnowledgeGraph({
         const isHighlighted = hovered && (hovered.id === edge.from_node_id || hovered.id === edge.to_node_id)
         // Edge fades with its nodes
         const nodeAlpha = Math.min(a.displayAlpha ?? 0.85, b.displayAlpha ?? 0.85)
-        const baseAlpha = isHighlighted ? 0.6 : (0.05 + edge.strength * 0.3)
+        const isOrganicFocusedView = Boolean(focusedNodeIdRef.current) && layoutModeRef.current === 'organic'
+        const hasBackgroundNode = nodeRolesRef.current.get(edge.from_node_id) === 'background' || nodeRolesRef.current.get(edge.to_node_id) === 'background'
+        const baseAlpha = isHighlighted ? 0.55
+          : hasBackgroundNode ? 0.025
+          : isOrganicFocusedView ? (0.018 + edge.strength * 0.12)
+          : (0.05 + edge.strength * 0.3)
         ctx.globalAlpha = baseAlpha * nodeAlpha
         ctx.beginPath()
         ctx.strokeStyle = color
-        ctx.lineWidth = (0.5 + edge.strength * 2) * (isHighlighted ? 1.5 : 1)
+        ctx.lineWidth = (isOrganicFocusedView ? 0.35 + edge.strength * 1.1 : 0.5 + edge.strength * 2) * (isHighlighted ? 1.5 : 1)
         if (isContradiction) {
           ctx.setLineDash([4, 4])
           const vibrate = Math.sin(time.current * 8) * 2
@@ -844,7 +909,8 @@ export default function KnowledgeGraph({
 
       // --- Draw nodes ---
       ctx.globalAlpha = 1
-      for (const n of gn) {
+      const drawNodes = [...gn].sort((a, b) => Number(nodeRolesRef.current.get(b.id) === 'background') - Number(nodeRolesRef.current.get(a.id) === 'background'))
+      for (const n of drawNodes) {
         const color = TYPE_COLORS_THEMED[n.type] || TYPE_COLORS.raw
         const r = n.displayRadius ?? n.radius ?? 4
         const alpha = n.displayAlpha ?? 0.85
@@ -852,7 +918,7 @@ export default function KnowledgeGraph({
         const isConnectSource = connectFrom.current === n
         const role = nodeRolesRef.current.get(n.id)
 
-        if (alpha < 0.05) continue
+        if (alpha < 0.015) continue
 
         // Glow for hover, focus, or connect source
         if (isHovered || isConnectSource || role === 'focus') {
@@ -988,7 +1054,7 @@ export default function KnowledgeGraph({
 
     animate()
     return () => cancelAnimationFrame(animRef.current)
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps — runs once, uses refs for all changing data
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Mouse handlers
   useEffect(() => {
@@ -1000,7 +1066,7 @@ export default function KnowledgeGraph({
       const x = (sx - rect.left - pan.current.x) / zoom.current
       const y = (sy - rect.top - pan.current.y) / zoom.current
       for (const n of graphNodes.current) {
-        const r = (n.radius || 4) + 6
+        const r = (n.displayRadius ?? n.radius ?? 4) + 6
         if (Math.abs(n.x! - x) < r && Math.abs(n.y! - y) < r) return n
       }
       return null
@@ -1009,6 +1075,11 @@ export default function KnowledgeGraph({
     function onMouseMove(e: MouseEvent) {
       const rect = canvas!.getBoundingClientRect()
       mouse.current = { x: e.clientX - rect.left, y: e.clientY - rect.top }
+      if (isDragging.current || isPanning.current) {
+        const dx = e.clientX - dragStart.current.x
+        const dy = e.clientY - dragStart.current.y
+        if (Math.sqrt(dx * dx + dy * dy) > 4) dragMoved.current = true
+      }
 
       // Connecting mode
       if (isConnecting.current && connectFrom.current) {
@@ -1058,6 +1129,10 @@ export default function KnowledgeGraph({
     }
 
     function onMouseDown(e: MouseEvent) {
+      const rect = canvas!.getBoundingClientRect()
+      mouse.current = { x: e.clientX - rect.left, y: e.clientY - rect.top }
+      dragStart.current = { x: e.clientX, y: e.clientY }
+      dragMoved.current = false
       const node = findNode(e.clientX, e.clientY)
 
       // Shift+click on node = start connecting
@@ -1084,6 +1159,9 @@ export default function KnowledgeGraph({
     }
 
     function onMouseUp(e: MouseEvent) {
+      const rect = canvas!.getBoundingClientRect()
+      mouse.current = { x: e.clientX - rect.left, y: e.clientY - rect.top }
+
       // Finish connecting
       if (isConnecting.current && connectFrom.current) {
         const target = findNode(e.clientX, e.clientY)
@@ -1124,6 +1202,7 @@ export default function KnowledgeGraph({
       isDragging.current = false
       didDrag.current = false
       isPanning.current = false
+      dragMoved.current = false
       canvas!.style.cursor = hoveredNode.current ? 'pointer' : 'grab'
     }
 
@@ -1137,6 +1216,7 @@ export default function KnowledgeGraph({
 
     function onWheel(e: WheelEvent) {
       e.preventDefault()
+      cameraTransitioning.current = false
       const rect = canvas!.getBoundingClientRect()
       const mx = e.clientX - rect.left
       const my = e.clientY - rect.top
@@ -1154,6 +1234,7 @@ export default function KnowledgeGraph({
       dragNode.current = null
       isDragging.current = false
       isPanning.current = false
+      dragMoved.current = false
       isConnecting.current = false
       connectFrom.current = null
       setTooltip(null)
@@ -1346,11 +1427,31 @@ export default function KnowledgeGraph({
         if (onNodeClickRef.current) onNodeClickRef.current(id)
       }} />
 
+      {/* View mode */}
+      <div className="absolute top-3 right-3 flex overflow-hidden rounded-lg border border-white/[0.06] bg-white/[0.04] backdrop-blur-sm">
+        {(['hierarchy', 'organic'] as const).map((mode) => (
+          <button
+            key={mode}
+            onClick={() => {
+              cameraTransitioning.current = false
+              setLayoutMode(mode)
+            }}
+            className={`px-2.5 py-1 text-[10px] transition-colors ${
+              layoutMode === mode
+                ? 'bg-white/[0.1] text-white/70'
+                : 'text-neutral-600 hover:text-neutral-400'
+            }`}
+          >
+            {mode}
+          </button>
+        ))}
+      </div>
+
       {/* Fullscreen toggle */}
       {!fullscreen && (
         <a
           href="/graph"
-          className="absolute top-3 right-3 p-1.5 rounded-lg text-neutral-600 hover:text-white bg-white/[0.04] border border-white/[0.06] hover:bg-white/[0.08] transition-all"
+          className="absolute top-12 right-3 p-1.5 rounded-lg text-neutral-600 hover:text-white bg-white/[0.04] border border-white/[0.06] hover:bg-white/[0.08] transition-all"
           title="Open full view"
         >
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5">
@@ -1435,15 +1536,15 @@ export default function KnowledgeGraph({
       {/* Zoom controls */}
       <div className="absolute bottom-3 right-3 flex gap-1">
         <button
-          onClick={() => { zoom.current = Math.min(5, zoom.current * 1.3) }}
+          onClick={() => { cameraTransitioning.current = false; zoom.current = Math.min(5, zoom.current * 1.3) }}
           className="w-7 h-7 flex items-center justify-center text-neutral-600 hover:text-white bg-white/[0.04] border border-white/[0.06] rounded-lg text-[14px] transition-colors"
         >+</button>
         <button
-          onClick={() => { zoom.current = Math.max(0.2, zoom.current * 0.7) }}
+          onClick={() => { cameraTransitioning.current = false; zoom.current = Math.max(0.2, zoom.current * 0.7) }}
           className="w-7 h-7 flex items-center justify-center text-neutral-600 hover:text-white bg-white/[0.04] border border-white/[0.06] rounded-lg text-[14px] transition-colors"
         >−</button>
         <button
-          onClick={() => { zoom.current = 1; pan.current = { x: 0, y: 0 } }}
+          onClick={() => { cameraTransitioning.current = false; zoom.current = 1; pan.current = { x: 0, y: 0 } }}
           className="w-7 h-7 flex items-center justify-center text-neutral-600 hover:text-white bg-white/[0.04] border border-white/[0.06] rounded-lg text-[10px] transition-colors"
         >fit</button>
       </div>
@@ -1484,15 +1585,14 @@ function GraphSearchBar({ nodes, nodeRadii, onSelect, typeColors: TYPE_COLORS_TH
       .slice(0, 12)
   }, [nodes, query, typeFilter, nodeRadii])
 
-  // Reset selection when results change
-  useEffect(() => { setSelectedIdx(0) }, [results.length, query, typeFilter])
+  const activeIdx = results.length === 0 ? 0 : Math.min(selectedIdx, results.length - 1)
 
   function handleKeyDown(e: React.KeyboardEvent) {
     if (e.key === 'ArrowDown') { e.preventDefault(); setSelectedIdx(i => Math.min(i + 1, results.length - 1)) }
     else if (e.key === 'ArrowUp') { e.preventDefault(); setSelectedIdx(i => Math.max(i - 1, 0)) }
-    else if (e.key === 'Enter' && results[selectedIdx]) {
+    else if (e.key === 'Enter' && results[activeIdx]) {
       e.preventDefault()
-      onSelect(results[selectedIdx].id)
+      onSelect(results[activeIdx].id)
       setOpen(false); setQuery(''); setTypeFilter(null)
     }
     else if (e.key === 'Escape') { setOpen(false); setQuery(''); setTypeFilter(null) }
@@ -1582,7 +1682,7 @@ function GraphSearchBar({ nodes, nodeRadii, onSelect, typeColors: TYPE_COLORS_TH
                 return (
                   <button key={node.id} onClick={() => selectResult(node.id)}
                     onMouseEnter={() => setSelectedIdx(i)}
-                    className={`w-full text-left flex items-center gap-2 px-3 py-2 transition-colors ${i === selectedIdx ? 'bg-white/[0.06]' : 'hover:bg-white/[0.03]'}`}>
+                    className={`w-full text-left flex items-center gap-2 px-3 py-2 transition-colors ${i === activeIdx ? 'bg-white/[0.06]' : 'hover:bg-white/[0.03]'}`}>
                     <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: TYPE_COLORS_THEMED[node.type] || TYPE_COLORS.raw }} />
                     <span className="text-[11px] text-white/70 truncate flex-1 min-w-0">{node.content}</span>
                     <span className="text-[9px] text-neutral-700 shrink-0" style={{ color: TYPE_COLORS_THEMED[node.type] }}>{node.type}</span>

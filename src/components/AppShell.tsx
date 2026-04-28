@@ -7,6 +7,7 @@ import ProcessingQueue from './ProcessingQueue'
 import SpacesPanel from './SpacesPanel'
 import KnowledgeGraph from './KnowledgeGraph'
 import SidePanel from './SidePanel'
+import { GraphNavigationProvider } from './GraphNavigationContext'
 
 type NavKey = 'home' | 'graph' | 'files' | 'publish'
 
@@ -110,14 +111,16 @@ export default function AppShell({ children, filesPanel, headerActions, graphDat
         {/* Main content area — switches based on active nav */}
         {activeNav === 'graph' && graphData ? (
           <div className="flex-1 overflow-hidden bg-[#050505] relative">
-            <KnowledgeGraph
-              nodes={graphData.nodes}
-              edges={graphData.edges}
-              folders={graphData.folders}
-              folderNodes={graphData.folderNodes}
-              onNodeClick={(id) => select('node', id)}
-              fullscreen
-            />
+            <GraphNavigationProvider nodes={graphData.nodes} edges={graphData.edges}>
+              <KnowledgeGraph
+                nodes={graphData.nodes}
+                edges={graphData.edges}
+                folders={graphData.folders}
+                folderNodes={graphData.folderNodes}
+                onNodeClick={(id) => select('node', id)}
+                fullscreen
+              />
+            </GraphNavigationProvider>
             {selection && (
               <div className="absolute top-0 right-0 h-full z-20">
                 <SidePanel
