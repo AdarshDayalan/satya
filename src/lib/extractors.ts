@@ -30,6 +30,147 @@ export async function extractContent(
   }
 }
 
+interface TranscriptSegment {
+  offset: number // ms
+  duration: number // ms
+  text: string
+}
+
+// Decode XML entities that appear in YouTube timedtext responses.
+function decodeXmlEntities(text: string): string {
+  return text
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCodePoint(parseInt(hex, 16)))
+    .replace(/&#(\d+);/g, (_, num) => String.fromCodePoint(parseInt(num)))
+}
+
+// Parse YouTube's timedtext json3 format into transcript segments.
+function parseJson3(data: unknown): TranscriptSegment[] {
+  const events = (data as { events?: Array<{ tStartMs?: number; dDurationMs?: number; segs?: Array<{ utf8?: string }> }> })?.events ?? []
+  const segments: TranscriptSegment[] = []
+  for (const e of events) {
+    if (!e.segs) continue
+    const text = e.segs.map(s => s.utf8 ?? '').join('').replace(/\s+/g, ' ').trim()
+    if (!text) continue
+    segments.push({
+      offset: e.tStartMs ?? 0,
+      duration: e.dDurationMs ?? 0,
+      text,
+    })
+  }
+  return segments
+}
+
+// Parse YouTube's timedtext XML format into transcript segments.
+function parseXmlTimedText(xml: string): TranscriptSegment[] {
+  const segments: TranscriptSegment[] = []
+  const re = /<text[^>]*\bstart="([\d.]+)"[^>]*(?:\bdur="([\d.]+)")?[^>]*>([\s\S]*?)<\/text>/g
+  let m: RegExpExecArray | null
+  while ((m = re.exec(xml)) !== null) {
+    const start = parseFloat(m[1])
+    const dur = m[2] ? parseFloat(m[2]) : 0
+    const raw = m[3].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()
+    const text = decodeXmlEntities(raw)
+    if (text) segments.push({ offset: start * 1000, duration: dur * 1000, text })
+  }
+  return segments
+}
+
+// Robust YouTube transcript fetcher.
+// Tries multiple strategies because YouTube frequently blocks watch-page scraping
+// from cloud IPs (Vercel) and the youtube-transcript package can break silently.
+async function fetchYouTubeTranscript(videoId: string): Promise<TranscriptSegment[] | null> {
+  const ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+
+  // Strategy 1: Innertube player API — most reliable, what youtube.com itself uses.
+  try {
+    const playerRes = await fetch(
+      'https://www.youtube.com/youtubei/v1/player?key=AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'User-Agent': ua,
+          'Accept-Language': 'en-US,en;q=0.9',
+          'Origin': 'https://www.youtube.com',
+          'Referer': `https://www.youtube.com/watch?v=${videoId}`,
+        },
+        body: JSON.stringify({
+          context: {
+            client: {
+              clientName: 'WEB',
+              clientVersion: '2.20241201.00.00',
+              hl: 'en',
+              gl: 'US',
+            },
+          },
+          videoId,
+        }),
+        signal: AbortSignal.timeout(10000),
+      }
+    )
+    if (playerRes.ok) {
+      const data = await playerRes.json()
+      const tracks = data?.captions?.playerCaptionsTracklistRenderer?.captionTracks as
+        | Array<{ baseUrl: string; languageCode?: string; kind?: string }>
+        | undefined
+      if (tracks && tracks.length > 0) {
+        // Prefer manual English captions, fall back to any English, then any track.
+        const track =
+          tracks.find(t => t.languageCode === 'en' && t.kind !== 'asr') ||
+          tracks.find(t => t.languageCode === 'en') ||
+          tracks.find(t => (t.languageCode || '').startsWith('en')) ||
+          tracks[0]
+        const url = `${track.baseUrl}&fmt=json3`
+        const capRes = await fetch(url, {
+          headers: { 'User-Agent': ua },
+          signal: AbortSignal.timeout(10000),
+        })
+        if (capRes.ok) {
+          const capData = await capRes.json().catch(() => null)
+          if (capData) {
+            const segs = parseJson3(capData)
+            if (segs.length > 0) return segs
+          }
+        }
+        // Fallback: same baseUrl without fmt → XML
+        const xmlRes = await fetch(track.baseUrl, {
+          headers: { 'User-Agent': ua },
+          signal: AbortSignal.timeout(10000),
+        })
+        if (xmlRes.ok) {
+          const xml = await xmlRes.text()
+          const segs = parseXmlTimedText(xml)
+          if (segs.length > 0) return segs
+        }
+      }
+    }
+  } catch (err) {
+    console.error('[satya] YouTube Innertube transcript failed:', err)
+  }
+
+  // Strategy 2: youtube-transcript package — may work in dev/local where Innertube is blocked.
+  try {
+    const { YoutubeTranscript } = await import('youtube-transcript')
+    const raw = await YoutubeTranscript.fetchTranscript(videoId)
+    if (raw && raw.length > 0) {
+      return raw.map((s: { offset: number; duration: number; text: string }) => ({
+        offset: s.offset,
+        duration: s.duration,
+        text: decodeXmlEntities(s.text),
+      }))
+    }
+  } catch (err) {
+    console.error('[satya] youtube-transcript fallback failed:', err)
+  }
+
+  return null
+}
+
 async function extractYouTube(
   rawContent: string,
   options: { videoId?: string; startTime?: number; endTime?: number }
@@ -52,27 +193,26 @@ async function extractYouTube(
     }
   } catch { /* non-critical */ }
 
-  // Fetch transcript
-  let transcriptText = ''
-  try {
-    const { YoutubeTranscript } = await import('youtube-transcript')
-    const segments = await YoutubeTranscript.fetchTranscript(videoId)
+  // Fetch transcript with multi-strategy fallback chain.
+  const segments = await fetchYouTubeTranscript(videoId)
 
-    // Filter to time range if specified
-    const filtered = segments.filter((s: { offset: number; duration: number }) => {
+  let transcriptText = ''
+  if (segments && segments.length > 0) {
+    const filtered = segments.filter(s => {
       const segStart = s.offset / 1000
       const segEnd = segStart + s.duration / 1000
       if (startTime !== undefined && segEnd < startTime) return false
       if (endTime !== undefined && segStart > endTime) return false
       return true
     })
-
-    transcriptText = filtered.map((s: { text: string }) => s.text).join(' ')
+    transcriptText = filtered.map(s => s.text).join(' ').replace(/\s+/g, ' ').trim()
     metadata.transcriptLength = transcriptText.length
+    metadata.transcriptSegments = segments.length
     if (startTime !== undefined) metadata.startTime = startTime
     if (endTime !== undefined) metadata.endTime = endTime
-  } catch {
-    transcriptText = '[transcript unavailable]'
+  } else {
+    metadata.transcriptUnavailable = true
+    transcriptText = '[transcript unavailable — captions may be disabled for this video]'
   }
 
   const timeLabel = startTime !== undefined
